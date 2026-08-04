@@ -27,6 +27,11 @@
 > Treat this as a hobby project / starting point, not as trusted infrastructure tooling.
 > Read the code before you rely on it, especially anything touching credentials or the
 > target host connection.
+>
+> If you need something production-ready and actively maintained instead, look at
+> [**AWX**](https://github.com/ansible/awx) (Red Hat's open-source upstream for Ansible
+> Automation Platform, formerly Ansible Tower) or [**Semaphore**](https://semaphoreui.com/)
+> — both are real projects with real security postures, built for exactly this kind of job.
 
 Ansiblaster is a small web UI for applying Ansible roles to a single target host on demand:
 point it at a directory of Ansible roles, check the ones you want, type in a target's
