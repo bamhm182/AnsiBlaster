@@ -39,6 +39,8 @@ IP/port/username/password, and hit **Apply** — it runs the selected roles agai
 [`ansible-runner`](https://ansible.readthedocs.io/projects/runner/) and streams the live log
 back to your browser.
 
+![Ansiblaster: the docker-host role selected, targeting a local host on the network](docs/screenshot.png)
+
 ## Features
 
 - **Role checklist**, auto-discovered from a configured roles directory (no manual registration)
