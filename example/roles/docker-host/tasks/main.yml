@@ -1,0 +1,22 @@
+---
+- name: Install Docker
+  ansible.builtin.apt:
+    name: docker.io # Ubuntu's own repo package -- keeps this example free of an extra
+                     # apt_key/apt_repository step to add Docker's official upstream repo
+    state: present
+    update_cache: true
+
+- name: Ensure Docker is enabled and running
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Add the connecting user to the docker group
+  # Lets that user run docker without sudo -- takes effect on their next login/session, not
+  # immediately. Skipped for root, which already has full access.
+  ansible.builtin.user:
+    name: "{{ ansible_user }}"
+    groups: docker
+    append: true
+  when: ansible_user != "root"
