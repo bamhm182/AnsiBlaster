@@ -68,28 +68,30 @@
             </select>
           </label>
 
-          <label>
-            IP address
-            <input type="text" name="target_host" required>
-          </label>
+          <div class="field-row field-row-host">
+            <label class="field-host">
+              IP address
+              <input type="text" name="target_host" required>
+            </label>
+            <label class="field-port">
+              Port
+              <input type="number" name="target_port" id="target-port-input"
+                     value="{{ default_ports['linux'] }}" required>
+            </label>
+          </div>
 
-          <label>
-            Port
-            <input type="number" name="target_port" id="target-port-input"
-                   value="{{ default_ports['linux'] }}" required>
-          </label>
-
-          <label>
-            Username
-            <input type="text" name="target_user" id="target-user-input"
-                   value="{{ defaults.linux.username }}" required>
-          </label>
-
-          <label>
-            Password
-            <input type="password" name="target_password" id="target-password-input"
-                   value="{{ defaults.linux.password }}">
-          </label>
+          <div class="field-row field-row-creds">
+            <label>
+              Username
+              <input type="text" name="target_user" id="target-user-input"
+                     value="{{ defaults.linux.username }}" required>
+            </label>
+            <label>
+              Password
+              <input type="password" name="target_password" id="target-password-input"
+                     value="{{ defaults.linux.password }}">
+            </label>
+          </div>
         </div>
 
         <div class="form-error" id="apply-form-error" hidden></div>

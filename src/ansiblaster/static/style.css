@@ -302,6 +302,28 @@ main {
   color: var(--fg-muted);
 }
 
+/* IP/port and username/password each share a row instead of stacking full-width -- the row
+   itself carries the bottom margin so its two labels don't double it up. min-width: 0 lets a
+   flex item shrink below its input's intrinsic width instead of overflowing the row. */
+.field-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.65rem;
+}
+.field-row label {
+  margin-bottom: 0;
+  min-width: 0;
+}
+.field-row-host .field-host {
+  flex: 3;
+}
+.field-row-host .field-port {
+  flex: 1;
+}
+.field-row-creds label {
+  flex: 1;
+}
+
 .deploy-target input,
 .deploy-target select {
   display: block;
