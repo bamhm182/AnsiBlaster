@@ -1,121 +1,648 @@
+/* Dracula palette (matches the published Dracula theme / its VS Code port) applied as a
+   fixed, always-dark IDE-style layout -- three panels (Playbooks / Roles / Deploy) plus a
+   collapsible bottom panel (Log / History), each managing its own internal scroll instead of
+   the page itself scrolling, the way an editor's panes do.
+*/
 :root {
-  color-scheme: light dark;
-  --border: #8884;
-  --accent: #3b6ea5;
+  --bg: #282a36; /* editor background -- list content areas, log panel */
+  --bg-sidebar: #21222c; /* panel background, a shade darker than the editor */
+  --bg-elevated: #343746; /* title bar, panel headers, tab bars */
+  --bg-inset: #191a21; /* deepest recess -- borders, status bar, collapsed chrome */
+  --selection: #44475a; /* hover/active row, current-line */
+  --fg: #f8f8f2;
+  --fg-muted: #6272a4; /* comment color -- secondary text, placeholders, hints */
+  --cyan: #8be9fd;
+  --green: #50fa7b;
+  --orange: #ffb86c;
+  --pink: #ff79c6;
+  --purple: #bd93f9;
+  --red: #ff5555;
+  --yellow: #f1fa8c;
+
+  --accent: var(--purple);
+  --accent-fg: #1e1f29;
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "Fira Code", Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
 }
 
 body {
-  font-family: system-ui, sans-serif;
-  max-width: 60rem;
-  margin: 0 auto;
-  padding: 1rem;
-  line-height: 1.4;
+  background: var(--bg-inset);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Thin, subtle scrollbars -- Firefox + WebKit */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--selection) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--selection);
+  border-radius: 6px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+button,
+input,
+select {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+/* ---------- Title bar ---------- */
+
+header {
+  flex: 0 0 auto;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--bg-inset);
+  padding: 0.5rem 1rem;
 }
 
 header h1 {
-  font-size: 1.5rem;
-  margin-bottom: 1rem;
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--fg-muted);
+  letter-spacing: 0.02em;
 }
 
-fieldset {
-  border: 1px solid var(--border);
-  border-radius: 0.4rem;
-  margin-bottom: 1rem;
+header h1::before {
+  content: "⚡ ";
+  color: var(--accent);
 }
 
-#target-fields {
-  border: 1px solid var(--border);
-  border-radius: 0.4rem;
-  padding: 0.75rem;
-  margin-bottom: 1rem;
+/* ---------- Overall shell ---------- */
+
+main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
-#target-fields label {
-  display: block;
-  margin-bottom: 0.5rem;
+.app-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
-.role-option,
-.playbook-option {
-  display: inline-block;
-  margin: 0.15rem 0.5rem 0.15rem 0;
+.workspace {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.2fr;
+  gap: 1px;
+  background: var(--bg-inset);
+}
+
+@media (max-width: 800px) {
+  .workspace {
+    grid-auto-flow: row;
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+  .panel {
+    min-height: 16rem;
+  }
+}
+
+/* ---------- Playbooks / Roles panels ---------- */
+
+.panel {
+  background: var(--bg-sidebar);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.panel-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--bg-inset);
+}
+
+.panel-header h2 {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-muted);
+}
+
+.icon-button {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+.icon-button:hover {
+  background: var(--selection);
+  color: var(--fg);
+}
+
+.fuzzy-filter {
+  flex: 0 0 auto;
+  margin: 0.5rem;
+  padding: 0.35rem 0.55rem;
+  background: var(--bg);
+  border: 1px solid var(--bg-inset);
+  border-radius: 4px;
+  color: var(--fg);
+}
+.fuzzy-filter::placeholder {
+  color: var(--fg-muted);
+}
+.fuzzy-filter:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.panel-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.25rem 0;
 }
 
 .empty-hint {
-  opacity: 0.7;
+  color: var(--fg-muted);
   font-style: italic;
+  padding: 0.5rem 0.85rem;
+  margin: 0;
 }
+
+.list-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+}
+.list-item:hover {
+  background: var(--selection);
+}
+.list-item input[type="checkbox"] {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.list-item .list-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.list-item .list-item-arrow {
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+.list-item:hover .list-item-arrow {
+  color: var(--accent);
+}
+/* Fuzzy-filter hides by [data-filter-name] element, which is the .list-item itself for
+   roles (a <label>) but its wrapping .playbook-item <div> for playbooks (since a <button>
+   can't validly contain the <input> that lives alongside it) -- so this targets the
+   attribute, not the .list-item class, to cover both. */
+[data-filter-name].is-hidden {
+  display: none;
+}
+
+.playbook-item .list-item {
+  width: 100%;
+  background: none;
+  border: none;
+  text-align: left;
+}
+
+/* Roles panel checkboxes get a subtle checked-row highlight */
+.role-item:has(input:checked) {
+  border-left-color: var(--green);
+  background: color-mix(in srgb, var(--green) 12%, transparent);
+}
+
+/* ---------- Deploy panel ---------- */
+
+.panel-deploy {
+  display: flex;
+  flex-direction: column;
+}
+
+#apply-form {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.deploy-selected {
+  flex: 1 1 33%;
+  min-height: 0;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--bg-inset);
+  padding: 0.5rem 0.85rem;
+}
+
+.selected-roles-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.selected-roles-list li {
+  padding: 0.2rem 0;
+  color: var(--cyan);
+}
+.selected-roles-list li::before {
+  content: "● ";
+  color: var(--green);
+  font-size: 0.6rem;
+}
+
+.deploy-target {
+  flex: 1 1 67%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.75rem 0.85rem;
+}
+
+.deploy-target label {
+  display: block;
+  margin-bottom: 0.65rem;
+  font-size: 0.78rem;
+  color: var(--fg-muted);
+}
+
+.deploy-target input,
+.deploy-target select {
+  display: block;
+  width: 100%;
+  margin-top: 0.25rem;
+  padding: 0.4rem 0.55rem;
+  background: var(--bg);
+  border: 1px solid var(--bg-inset);
+  border-radius: 4px;
+  color: var(--fg);
+}
+.deploy-target input:focus,
+.deploy-target select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.apply-button {
+  flex: 0 0 auto;
+  width: 100%;
+  padding: 0.75rem;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: none;
+  font-weight: 700;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+.apply-button:hover {
+  background: var(--pink);
+}
+.apply-button:disabled {
+  background: var(--selection);
+  color: var(--fg-muted);
+  cursor: not-allowed;
+}
+
+.form-error {
+  flex: 0 0 auto;
+  background: color-mix(in srgb, var(--red) 20%, var(--bg));
+  color: var(--red);
+  padding: 0.5rem 0.85rem;
+  font-size: 0.8rem;
+  border-bottom: 1px solid var(--bg-inset);
+}
+
+/* ---------- Bottom panel (Log / History) ---------- */
+
+.bottom-panel {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-sidebar);
+  border-top: 1px solid var(--bg-inset);
+}
+
+.bottom-panel-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-elevated);
+}
+
+.bottom-tabs {
+  display: flex;
+}
+
+.bottom-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--fg-muted);
+  padding: 0.5rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+.bottom-tab:hover {
+  color: var(--fg);
+}
+.bottom-tab.active {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+
+.collapse-toggle {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+}
+.collapse-toggle:hover {
+  color: var(--fg);
+}
+
+.bottom-panel-body {
+  height: 32vh;
+  min-height: 8rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.bottom-panel.collapsed .bottom-panel-body {
+  display: none;
+}
+.bottom-panel.collapsed .collapse-toggle {
+  transform: rotate(-90deg);
+}
+
+.bottom-tab-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.bottom-tab-content[hidden] {
+  display: none;
+}
+
+/* Run tabs (one per concurrent run) inside the Log tab */
+
+.run-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 1px;
+  background: var(--bg-inset);
+  overflow-x: auto;
+}
+.run-tabs:empty {
+  display: none;
+}
+
+.run-tab {
+  background: var(--bg-elevated);
+  border: none;
+  color: var(--fg-muted);
+  padding: 0.35rem 0.85rem;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  cursor: pointer;
+  border-top: 2px solid transparent;
+}
+.run-tab:hover {
+  color: var(--fg);
+}
+.run-tab.active {
+  background: var(--bg);
+  color: var(--fg);
+  border-top-color: var(--accent);
+}
+.run-tab .run-tab-status-dot {
+  display: inline-block;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  margin-right: 0.35rem;
+  background: var(--yellow);
+}
+.run-tab[data-status="successful"] .run-tab-status-dot {
+  background: var(--green);
+}
+.run-tab[data-status="failed"] .run-tab-status-dot,
+.run-tab[data-status="error"] .run-tab-status-dot {
+  background: var(--red);
+}
+.run-tab[data-status="canceled"] .run-tab-status-dot {
+  background: var(--fg-muted);
+}
+
+.run-tab-contents {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.run-tab-content {
+  height: 100%;
+  overflow-y: auto;
+}
+.run-tab-content[hidden] {
+  display: none;
+}
+
+/* run_detail.html content, restyled for the dark theme */
+
+.run-detail {
+  padding: 0.6rem 0.85rem;
+}
+
+.run-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.4rem;
+}
+.run-detail-header h3 {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+
+.run-detail-close {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.run-detail-close:hover {
+  color: var(--red);
+}
+
+.run-detail-meta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.15rem 0.85rem;
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+}
+.run-detail-meta dt {
+  color: var(--fg-muted);
+}
+.run-detail-meta dd {
+  margin: 0;
+}
+.run-detail-meta .status {
+  text-transform: capitalize;
+  color: var(--yellow);
+}
+.run-detail.status-successful .run-detail-meta .status {
+  color: var(--green);
+}
+.run-detail.status-failed .run-detail-meta .status,
+.run-detail.status-error .run-detail-meta .status {
+  color: var(--red);
+}
+.run-detail.status-canceled .run-detail-meta .status {
+  color: var(--fg-muted);
+}
+
+.run-detail button[hx-post] {
+  background: var(--red);
+  color: var(--accent-fg);
+  border: none;
+  padding: 0.35rem 0.85rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  margin-bottom: 0.5rem;
+}
+.run-detail button[hx-post]:hover {
+  opacity: 0.85;
+}
+.cancel-pending {
+  color: var(--fg-muted);
+  font-size: 0.8rem;
+}
+
+.run-log {
+  background: var(--bg);
+  border: 1px solid var(--bg-inset);
+  border-radius: 4px;
+  padding: 0.6rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+/* History tab */
 
 .run-list {
   list-style: none;
-  padding: 0;
+  margin: 0;
+  padding: 0.25rem 0;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .run-row {
   display: flex;
   gap: 0.75rem;
   align-items: baseline;
-  border-bottom: 1px solid var(--border);
-  padding: 0.4rem 0;
+  padding: 0.35rem 0.85rem;
+  border-bottom: 1px solid var(--bg-inset);
 }
 
 .run-row-link {
   background: none;
   border: none;
-  color: var(--accent);
+  color: var(--cyan);
   cursor: pointer;
   text-align: left;
   padding: 0;
   font: inherit;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.run-row-link:hover {
   text-decoration: underline;
 }
 
 .run-row-status {
   text-transform: capitalize;
-  opacity: 0.8;
+  color: var(--fg-muted);
+  font-size: 0.78rem;
 }
 
-.run-detail {
-  border: 1px solid var(--border);
-  border-radius: 0.4rem;
-  padding: 0.75rem;
-  margin-bottom: 1rem;
+.run-row time {
+  color: var(--fg-muted);
+  font-size: 0.72rem;
+  white-space: nowrap;
 }
 
-.run-detail-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.run-detail-close {
+#bottom-panel [hx-get="/runs"] {
+  flex: 0 0 auto;
+  margin: 0.5rem 0.85rem;
+  align-self: flex-start;
   background: none;
-  border: none;
-  font-size: 1.2rem;
+  border: 1px solid var(--selection);
+  color: var(--fg-muted);
+  border-radius: 4px;
+  padding: 0.3rem 0.7rem;
   cursor: pointer;
+  font-size: 0.75rem;
 }
-
-.run-detail-meta {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 0.2rem 1rem;
-  margin: 0.5rem 0;
-}
-
-.run-detail-meta dt {
-  font-weight: 600;
-}
-
-.run-detail-meta dd {
-  margin: 0;
-}
-
-.run-log {
-  background: #1114;
-  border-radius: 0.3rem;
-  padding: 0.5rem;
-  max-height: 20rem;
-  overflow-y: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
+#bottom-panel [hx-get="/runs"]:hover {
+  color: var(--fg);
+  border-color: var(--accent);
 }

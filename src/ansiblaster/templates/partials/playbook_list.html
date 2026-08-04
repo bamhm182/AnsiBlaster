@@ -1,22 +1,19 @@
-<fieldset id="playbook-presets">
-  <legend>Playbooks</legend>
-  {% if playbooks %}
-    {% for name, roles in playbooks.items() %}
-      <span class="playbook-option">
-        <input type="checkbox" name="playbooks" value="{{ name }}" id="playbook-{{ name }}" hidden>
-        <button
-          type="button"
-          class="playbook-button"
-          data-playbook="{{ name }}"
-          data-roles="{{ roles | tojson }}"
-          onclick="applyPlaybook(this)"
-        >{{ name }}</button>
-      </span>
-    {% endfor %}
-  {% else %}
-    <p class="empty-hint">No playbooks found.</p>
-  {% endif %}
-  <button type="button" hx-get="/playbooks" hx-target="#playbook-list" hx-swap="innerHTML">
-    Refresh playbooks
-  </button>
-</fieldset>
+{% if playbooks %}
+  {% for name, roles in playbooks.items() %}
+    <div class="playbook-item" data-filter-name="{{ name }}">
+      <input type="checkbox" name="playbooks" value="{{ name }}" id="playbook-{{ name }}" form="apply-form" hidden>
+      <button
+        type="button"
+        class="list-item playbook-button"
+        data-playbook="{{ name }}"
+        data-roles="{{ roles | tojson }}"
+        onclick="applyPlaybook(this)"
+      >
+        <span class="list-item-name">{{ name }}</span>
+        <span class="list-item-arrow" aria-hidden="true">&#9656;</span>
+      </button>
+    </div>
+  {% endfor %}
+{% else %}
+  <p class="empty-hint">No playbooks found.</p>
+{% endif %}

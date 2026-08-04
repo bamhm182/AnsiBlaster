@@ -2,21 +2,18 @@
 <div
   id="run-detail-{{ run.id }}"
   class="run-detail status-{{ run.status.value }}"
-  {% if is_active %}
-  hx-ext="sse"
-  sse-connect="/runs/{{ run.id }}/stream"
-  hx-trigger="sse:done"
-  hx-get="/runs/{{ run.id }}"
-  hx-swap="outerHTML"
-  {% endif %}
+  data-run-id="{{ run.id }}"
+  data-target-host="{{ run.target_host }}"
+  data-status="{{ run.status.value }}"
+  data-active="{{ 'true' if is_active else 'false' }}"
 >
   <div class="run-detail-header">
-    <h3>Run {{ run.id }}</h3>
+    <h3>{{ run.target_host }}</h3>
     <button
       type="button"
       class="run-detail-close"
-      onclick="this.closest('.run-detail').remove()"
-      aria-label="Dismiss"
+      onclick="closeRunTab('{{ run.id }}')"
+      aria-label="Close"
     >&times;</button>
   </div>
 
@@ -47,5 +44,5 @@
     </button>
   {% endif %}
 
-  <pre class="run-log" sse-swap="message" hx-swap="beforeend">{{ initial_log }}</pre>
+  <pre class="run-log">{{ initial_log }}</pre>
 </div>

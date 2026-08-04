@@ -36,11 +36,37 @@ logs) is persisted so past runs can be reviewed later.
 ### Backend & UI
 
 - **FastAPI** is the web framework. Pages and fragments are server-rendered with **Jinja2**
-  templates; **HTMX** drives interactivity (submitting the apply form, swapping in updated
-  role lists, appending log lines) without a separate frontend build/JS framework.
+  templates; **HTMX** drives most interactivity declaratively (refreshing the role/playbook
+  lists, the Cancel button) without a separate frontend build/JS framework. Two interactions —
+  submitting the apply form and opening a run from History — go through plain `fetch()` instead
+  of htmx's `hx-post`/`hx-get`, because both need to relocate the server's response into a
+  dynamically-created run tab (see "Live logs" below) rather than swap it into a fixed target;
+  letting htmx swap into a throwaway element first, only to relocate its content afterwards,
+  would mean htmx briefly initializes that throwaway element for real (in particular opening a
+  live SSE connection) before it's discarded.
 - The role checklist is built by scanning the configured roles directory at request time (or on
   a refresh action) — a directory is treated as a role if it looks like a standard Ansible role
   (contains `tasks/main.yml`, etc.), not by any hardcoded list.
+- **UI design**: a fixed-viewport, three-column IDE layout (Playbooks / Roles / Deploy) below a
+  thin title bar, styled after VS Code with the Dracula color palette (`style.css`'s `:root`
+  custom properties) — always dark, no light-mode variant. Each column manages its own internal
+  scroll (`overflow-y: auto` with `min-height: 0` on the flex chain) rather than the page
+  itself scrolling. Playbooks and Roles each have a client-side **fuzzy filter** at the top
+  (VS Code command-palette style: query characters must appear in order, not contiguously —
+  see `fuzzyMatch()` in `index.html`) that filters the already-rendered list with no server
+  round trip per keystroke, and re-applies itself after a list is refreshed. The Deploy
+  column's top third is a read-only reflection of whichever role checkboxes are currently
+  checked (`syncSelectedRolesSummary()`, delegated off `change` events so it survives a
+  role-list refresh) — unchecking happens back in the Roles column, not in this summary. The
+  Apply button is pinned outside the column's scrollable areas, `flex: 0 0 auto` after two
+  `flex: 1` scrolling sections (selected-roles summary, then the target form).
+- Below the three columns, a full-width collapsible panel has two tabs: **Log** (one sub-tab
+  per concurrent run, opened by submitting the form or clicking a run in History) and
+  **History** (`GET /runs`, restyled but otherwise unchanged). Role/playbook checkboxes live in
+  their own columns, outside `<form id="apply-form">` (which now wraps only the Deploy column,
+  since that's where the Apply button lives) — they're associated to that form via the HTML5
+  `form="apply-form"` attribute rather than DOM nesting, which is what both `FormData(form)` and
+  native form submission need to pick them up.
 
 ### Playbooks (role presets)
 
@@ -105,15 +131,31 @@ logs) is persisted so past runs can be reviewed later.
 
 - Log lines reach the browser via **Server-Sent Events (SSE)**, one stream per job
   (e.g. `GET /runs/{job_id}/stream`), fed from `ansible-runner`'s event/status callbacks as the
-  run progresses. This pairs naturally with HTMX's SSE extension for appending lines to the page
-  without polling.
-- Each stdout chunk becomes an unnamed ("message") SSE event that `run_detail.html`'s `<pre>`
-  appends via `sse-swap="message" hx-swap="beforeend"`. When the job finishes, the stream emits
-  one final **named `done` event with no payload**; the run's container element listens for it
-  via `hx-trigger="sse:done"` and just re-`GET`s its own `/runs/{job_id}` fragment
-  (`hx-swap="outerHTML"`) rather than parsing a status out of the event itself — that re-fetch
-  is what actually reflects the final status/return code/full log once ansible-runner has
-  written them.
+  run progresses. Each stdout chunk becomes an unnamed ("message") SSE event; when the job
+  finishes, the stream emits one final **named `done` event with no payload** and closes.
+- The client side is a **plain `EventSource` managed per-run in vanilla JS**
+  (`connectRunStream()`/`closeRunStream()` in `index.html`), not htmx's SSE extension. That
+  extension was tried first and dropped: its `hx-trigger="sse:done"` binding needs to locate
+  its own element's just-created `EventSource` at trigger-setup time, which reliably failed
+  (`htmx:noSSESourceError`, the "done" listener silently never binding) when the element
+  carrying `hx-ext="sse"`/`sse-connect` is inserted via `htmx.process()` — a manual DOM
+  insertion, which opening a run tab requires — rather than through htmx's own swap pipeline.
+  The practical symptom was a finished run's tab staying stuck showing "pending" forever, even
+  though the log lines themselves streamed in fine (`sse-swap="message"` did work reliably;
+  only the completion signal didn't). Hand-rolling both halves in JS avoids the mismatch and
+  keeps one code path instead of mixing two mechanisms for one conceptual stream.
+- `message` events append to that run's `<pre class="run-log">` via plain `textContent +=`;
+  the `done` event closes the `EventSource` and re-`fetch()`es `/runs/{job_id}`, feeding the
+  result back into `openRunTab()` (see below) to refresh the tab in place with the final
+  status/return code/log — the same "re-fetch rather than parse a status out of the event"
+  approach as before, just driven by JS instead of an `hx-trigger`.
+- **Run tabs**: one per concurrent run, inside the bottom panel's Log tab (see "Backend & UI"
+  above). `openRunTab(html)` parses the `run_detail.html` fragment the server has always
+  returned (from `POST /runs` or `GET /runs/{job_id}`), creates or reuses that run's tab
+  button + content pane, calls `htmx.process()` on it (so the Cancel button's `hx-post` still
+  works) and `connectRunStream()` if the run is still active
+  (`run_detail.html`'s `data-active="true"`). Closing a tab (`closeRunTab()`) closes its
+  `EventSource` before removing the DOM nodes, so an abandoned tab doesn't leak a connection.
 
 ### Persistence
 
@@ -267,20 +309,19 @@ src/ansiblaster/
 │                       # GET /runs/{job_id}/log, POST /runs/{job_id}/cancel
 ├── templates/
 │   ├── base.html
-│   ├── index.html
+│   ├── index.html       # 3-column workspace + bottom panel; owns nearly all client-side JS
+│   │                   # (fuzzy filter, playbook->checkbox, run tabs, EventSource management)
 │   └── partials/
 │       ├── role_list.html
 │       ├── playbook_list.html  # playbook buttons, each with its roles baked in as a data
 │       │                       # attribute for the client-side check script
 │       ├── run_list.html
-│       ├── run_row.html     # single history-list item, re-rendered/appended via HTMX
-│       └── run_detail.html  # status + log panel container for a job
+│       ├── run_row.html     # single history-list item; opened via a delegated fetch(),
+│       │                   # not hx-get (see "Backend & UI")
+│       └── run_detail.html  # one run's status + log; relocated into a run tab client-side
 └── static/
     ├── htmx.min.js     # vendored, not CDN — the app must work with no outbound internet access
-    ├── ext/
-    │   └── sse.js      # htmx's SSE extension, vendored from the same htmx.org release so the
-    │                   # extension API matches the core version exactly
-    └── style.css
+    └── style.css       # Dracula palette + the 3-column/bottom-panel IDE layout
 ```
 
 - `tests/` mirrors this layout alongside `src/` (not inside the package): `test_roles.py`,

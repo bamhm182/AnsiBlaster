@@ -1,73 +1,145 @@
 {% extends "base.html" %}
 {% block content %}
 
-<form id="apply-form" hx-post="/runs" hx-target="#run-results" hx-swap="afterbegin">
-  <section id="role-list-section">
-    <div id="role-list">
-      {% include "partials/role_list.html" %}
-    </div>
-  </section>
+<div class="app-shell">
+  <div class="workspace">
+    <section class="panel panel-playbooks" aria-label="Playbooks">
+      <div class="panel-header">
+        <h2>Playbooks</h2>
+        <button
+          type="button"
+          class="icon-button"
+          hx-get="/playbooks"
+          hx-target="#playbook-list"
+          hx-swap="innerHTML"
+          title="Refresh playbooks"
+        >&#8635;</button>
+      </div>
+      <input
+        type="search"
+        class="fuzzy-filter"
+        data-filter-target="#playbook-list"
+        placeholder="Filter playbooks&hellip;"
+        aria-label="Filter playbooks"
+      >
+      <div class="panel-list" id="playbook-list">
+        {% include "partials/playbook_list.html" %}
+      </div>
+    </section>
 
-  <section id="playbook-list-section">
-    <div id="playbook-list">
-      {% include "partials/playbook_list.html" %}
-    </div>
-  </section>
+    <section class="panel panel-roles" aria-label="Roles">
+      <div class="panel-header">
+        <h2>Roles</h2>
+        <button
+          type="button"
+          class="icon-button"
+          hx-get="/roles"
+          hx-target="#role-list"
+          hx-swap="innerHTML"
+          title="Refresh roles"
+        >&#8635;</button>
+      </div>
+      <input
+        type="search"
+        class="fuzzy-filter"
+        data-filter-target="#role-list"
+        placeholder="Filter roles&hellip;"
+        aria-label="Filter roles"
+      >
+      <div class="panel-list" id="role-list">
+        {% include "partials/role_list.html" %}
+      </div>
+    </section>
 
-  <section id="target-fields">
-    <legend>Target</legend>
+    <section class="panel panel-deploy" aria-label="Deploy">
+      <form id="apply-form">
+        <div class="panel-header"><h2>Deploy</h2></div>
 
-    <label>
-      OS
-      <select name="target_os" id="target-os-select" onchange="applyOsDefaults(this)">
-        <option value="linux">Linux</option>
-        <option value="windows">Windows</option>
-      </select>
-    </label>
+        <div class="deploy-selected" id="selected-roles-summary" aria-label="Selected roles">
+          <p class="empty-hint">No roles selected.</p>
+        </div>
 
-    <label>
-      IP address
-      <input type="text" name="target_host" required>
-    </label>
+        <div class="deploy-target">
+          <label>
+            OS
+            <select name="target_os" id="target-os-select" onchange="applyOsDefaults(this)">
+              <option value="linux">Linux</option>
+              <option value="windows">Windows</option>
+            </select>
+          </label>
 
-    <label>
-      Port
-      <input type="number" name="target_port" id="target-port-input"
-             value="{{ default_ports['linux'] }}" required>
-    </label>
+          <label>
+            IP address
+            <input type="text" name="target_host" required>
+          </label>
 
-    <label>
-      Username
-      <input type="text" name="target_user" id="target-user-input"
-             value="{{ defaults.linux.username }}" required>
-    </label>
+          <label>
+            Port
+            <input type="number" name="target_port" id="target-port-input"
+                   value="{{ default_ports['linux'] }}" required>
+          </label>
 
-    <label>
-      Password
-      <input type="password" name="target_password" id="target-password-input"
-             value="{{ defaults.linux.password }}">
-    </label>
-  </section>
+          <label>
+            Username
+            <input type="text" name="target_user" id="target-user-input"
+                   value="{{ defaults.linux.username }}" required>
+          </label>
 
-  <button type="submit">Apply</button>
-</form>
+          <label>
+            Password
+            <input type="password" name="target_password" id="target-password-input"
+                   value="{{ defaults.linux.password }}">
+          </label>
+        </div>
 
-<section id="run-results"></section>
+        <div class="form-error" id="apply-form-error" hidden></div>
 
-<section id="run-history">
-  <h2>Run history</h2>
-  <div id="run-list">
-    {% include "partials/run_list.html" %}
+        <button type="submit" class="apply-button" id="apply-button">Apply</button>
+      </form>
+    </section>
   </div>
-  <button type="button" hx-get="/runs" hx-target="#run-list" hx-swap="innerHTML">
-    Refresh history
-  </button>
-</section>
+
+  <section class="bottom-panel" id="bottom-panel">
+    <div class="bottom-panel-header">
+      <div class="bottom-tabs">
+        <button type="button" class="bottom-tab active" data-bottom-tab="log">Log</button>
+        <button type="button" class="bottom-tab" data-bottom-tab="history">History</button>
+      </div>
+      <button
+        type="button"
+        class="collapse-toggle"
+        id="collapse-toggle"
+        aria-expanded="true"
+        aria-label="Collapse panel"
+      >&#8964;</button>
+    </div>
+
+    <div class="bottom-panel-body" id="bottom-panel-body">
+      <div class="bottom-tab-content" data-bottom-content="log">
+        <div class="run-tabs" id="run-tabs"></div>
+        <div class="run-tab-contents" id="run-tab-contents">
+          <p class="empty-hint" id="no-runs-hint">
+            No active runs. Apply a set of roles to see live output here.
+          </p>
+        </div>
+      </div>
+      <div class="bottom-tab-content" data-bottom-content="history" hidden>
+        <ul class="run-list" id="run-list">
+          {% include "partials/run_list.html" %}
+        </ul>
+        <button type="button" hx-get="/runs" hx-target="#run-list" hx-swap="innerHTML">
+          Refresh history
+        </button>
+      </div>
+    </div>
+  </section>
+</div>
 
 <script>
-  // Per-OS defaults baked in at page render time (see CLAUDE.md's "Playbooks" and
-  // "Configuration file" sections) -- swapping the OS select pre-fills port/username/password
-  // without a server round trip; the user can still edit any of them before submitting.
+  // ---------------------------------------------------------------------
+  // Per-OS defaults (see CLAUDE.md's "Playbooks" and "Configuration file" sections) --
+  // swapping the OS select pre-fills port/username/password without a server round trip.
+  // ---------------------------------------------------------------------
   const OS_DEFAULTS = {
     linux: {
       port: {{ default_ports['linux'] }},
@@ -89,8 +161,10 @@
     document.getElementById("target-password-input").value = values.password;
   }
 
-  // Selecting a playbook only ever *adds* checks -- it never unchecks a role, and never
-  // makes a round trip to the server (see CLAUDE.md's "Playbooks (role presets)" section).
+  // ---------------------------------------------------------------------
+  // Playbooks only ever *add* checks -- never a round trip to the server (see CLAUDE.md's
+  // "Playbooks (role presets)" section).
+  // ---------------------------------------------------------------------
   function applyPlaybook(button) {
     const roles = JSON.parse(button.dataset.roles);
     roles.forEach((role) => {
@@ -99,7 +173,260 @@
     });
     const playbookCheckbox = document.getElementById("playbook-" + button.dataset.playbook);
     if (playbookCheckbox) playbookCheckbox.checked = true;
+    syncSelectedRolesSummary();
   }
+
+  function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // The Deploy column's top section is a read-only reflection of whatever's checked in the
+  // Roles column -- removal happens by unchecking the box there, not by interacting with this
+  // list directly.
+  function syncSelectedRolesSummary() {
+    const checked = Array.from(document.querySelectorAll('input[name="roles"]:checked'))
+      .map((el) => el.value);
+    const container = document.getElementById("selected-roles-summary");
+    if (checked.length === 0) {
+      container.innerHTML = '<p class="empty-hint">No roles selected.</p>';
+      return;
+    }
+    container.innerHTML =
+      '<ul class="selected-roles-list">' +
+      checked.map((role) => `<li>${escapeHtml(role)}</li>`).join("") +
+      "</ul>";
+  }
+
+  // Delegated so it keeps working after GET /roles refreshes #role-list's contents.
+  document.addEventListener("change", (evt) => {
+    if (evt.target.matches('input[name="roles"]')) syncSelectedRolesSummary();
+  });
+
+  // ---------------------------------------------------------------------
+  // Fuzzy filter (VS Code command-palette style: query characters just need to appear in
+  // order, not contiguously) -- purely client-side, no server round trip per keystroke.
+  // ---------------------------------------------------------------------
+  function fuzzyMatch(query, text) {
+    if (!query) return true;
+    query = query.toLowerCase();
+    text = text.toLowerCase();
+    let qi = 0;
+    for (let ti = 0; ti < text.length && qi < query.length; ti++) {
+      if (text[ti] === query[qi]) qi++;
+    }
+    return qi === query.length;
+  }
+
+  function applyFuzzyFilter(input) {
+    const target = document.querySelector(input.dataset.filterTarget);
+    if (!target) return;
+    const query = input.value.trim();
+    target.querySelectorAll("[data-filter-name]").forEach((item) => {
+      item.classList.toggle("is-hidden", !fuzzyMatch(query, item.dataset.filterName));
+    });
+  }
+
+  document.querySelectorAll(".fuzzy-filter").forEach((input) => {
+    input.addEventListener("input", () => applyFuzzyFilter(input));
+  });
+
+  // Re-apply whichever filter is active after its list is refreshed via the header's refresh
+  // button (GET /roles or GET /playbooks swapping #role-list / #playbook-list).
+  document.body.addEventListener("htmx:afterSwap", (evt) => {
+    document.querySelectorAll(".fuzzy-filter").forEach((input) => {
+      if (input.value.trim() && document.querySelector(input.dataset.filterTarget)?.contains(evt.detail.target)) {
+        applyFuzzyFilter(input);
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Bottom panel: Log/History tabs + collapse toggle.
+  // ---------------------------------------------------------------------
+  function switchBottomTab(name) {
+    document.querySelectorAll(".bottom-tab").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.bottomTab === name);
+    });
+    document.querySelectorAll(".bottom-tab-content").forEach((el) => {
+      el.hidden = el.dataset.bottomContent !== name;
+    });
+  }
+
+  document.querySelectorAll(".bottom-tab").forEach((btn) => {
+    btn.addEventListener("click", () => switchBottomTab(btn.dataset.bottomTab));
+  });
+
+  document.getElementById("collapse-toggle").addEventListener("click", (evt) => {
+    const panel = document.getElementById("bottom-panel");
+    const collapsed = panel.classList.toggle("collapsed");
+    evt.currentTarget.setAttribute("aria-expanded", String(!collapsed));
+  });
+
+  // ---------------------------------------------------------------------
+  // Live log streaming + completion detection: a plain EventSource per active run, managed
+  // entirely in JS rather than through htmx's sse extension. That extension's hx-trigger="sse:*"
+  // binding turned out not to reliably locate its own element's just-created EventSource when
+  // the element is inserted via htmx.process() (a manual DOM insertion, as tab-opening below
+  // requires) rather than through htmx's own swap pipeline -- it fires htmx:noSSESourceError
+  // and the "done" trigger never binds, so a finished run's tab would be stuck showing
+  // "pending" forever. One EventSource per run, opened when its tab opens and closed when the
+  // tab closes or the stream signals completion, sidesteps that entirely.
+  // ---------------------------------------------------------------------
+  const activeEventSources = {};
+
+  function connectRunStream(runId) {
+    if (activeEventSources[runId]) return;
+    const source = new EventSource(`/runs/${runId}/stream`);
+    activeEventSources[runId] = source;
+
+    source.addEventListener("message", (evt) => {
+      const pre = document.querySelector(`.run-tab-content[data-run-id="${runId}"] .run-log`);
+      if (pre) pre.textContent += evt.data + "\n";
+    });
+
+    source.addEventListener("done", async () => {
+      closeRunStream(runId);
+      try {
+        const response = await fetch(`/runs/${runId}`);
+        if (response.ok) openRunTab(await response.text());
+      } catch (err) {
+        // Best-effort refresh for the final status/rc -- the log itself is already fully
+        // populated from the stream regardless.
+      }
+    });
+
+    // EventSource auto-retries on transient network errors; only clean up once the browser
+    // has given up for good (readyState CLOSED), rather than on every blip.
+    source.onerror = () => {
+      if (source.readyState === EventSource.CLOSED) closeRunStream(runId);
+    };
+  }
+
+  function closeRunStream(runId) {
+    const source = activeEventSources[runId];
+    if (source) {
+      source.close();
+      delete activeEventSources[runId];
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Run tabs: one per concurrent run, inside the Log tab. Opened by submitting the apply
+  // form or clicking a run in History; each tab's content is the same run_detail.html
+  // fragment the server has always returned, just relocated into a tab pane instead of a
+  // flat list. htmx.process() is required for the Cancel button's hx-post to work, since this
+  // content is inserted via raw innerHTML, which htmx does not auto-process the way it does
+  // its own swaps.
+  // ---------------------------------------------------------------------
+  function openRunTab(html) {
+    const parsed = document.createElement("div");
+    parsed.innerHTML = html;
+    const detail = parsed.querySelector(".run-detail[data-run-id]");
+    if (!detail) return;
+    const runId = detail.dataset.runId;
+
+    let content = document.querySelector(`.run-tab-content[data-run-id="${runId}"]`);
+    if (!content) {
+      content = document.createElement("div");
+      content.className = "run-tab-content";
+      content.dataset.runId = runId;
+      document.getElementById("run-tab-contents").appendChild(content);
+    }
+    content.innerHTML = "";
+    content.appendChild(detail);
+    htmx.process(content);
+
+    if (detail.dataset.active === "true") {
+      connectRunStream(runId);
+    } else {
+      closeRunStream(runId);
+    }
+
+    let tabButton = document.querySelector(`.run-tab[data-run-id="${runId}"]`);
+    if (!tabButton) {
+      tabButton = document.createElement("button");
+      tabButton.type = "button";
+      tabButton.className = "run-tab";
+      tabButton.dataset.runId = runId;
+      tabButton.addEventListener("click", () => activateRunTab(runId));
+      document.getElementById("run-tabs").appendChild(tabButton);
+    }
+    tabButton.dataset.status = detail.dataset.status;
+    tabButton.innerHTML =
+      '<span class="run-tab-status-dot"></span>' + escapeHtml(detail.dataset.targetHost);
+
+    document.getElementById("no-runs-hint")?.remove();
+    activateRunTab(runId);
+    switchBottomTab("log");
+  }
+
+  function activateRunTab(runId) {
+    document.querySelectorAll(".run-tab").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.runId === runId);
+    });
+    document.querySelectorAll(".run-tab-content").forEach((el) => {
+      el.hidden = el.dataset.runId !== runId;
+    });
+  }
+
+  function closeRunTab(runId) {
+    closeRunStream(runId);
+    document.querySelector(`.run-tab[data-run-id="${runId}"]`)?.remove();
+    document.querySelector(`.run-tab-content[data-run-id="${runId}"]`)?.remove();
+
+    const remaining = document.querySelector(".run-tab");
+    if (remaining) {
+      activateRunTab(remaining.dataset.runId);
+    } else {
+      document.getElementById("run-tab-contents").innerHTML =
+        '<p class="empty-hint" id="no-runs-hint">' +
+        "No active runs. Apply a set of roles to see live output here.</p>";
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Apply form + History row clicks both end up opening a run tab, so both go through plain
+  // fetch() rather than htmx's declarative hx-post/hx-get -- letting htmx target a throwaway
+  // element first (so we could relocate its content into a tab afterwards) would mean htmx
+  // opens a real SSE connection on that throwaway element the instant it's swapped in, which
+  // we'd then have to discard/leak rather than ever using.
+  // ---------------------------------------------------------------------
+  const applyForm = document.getElementById("apply-form");
+  const applyButton = document.getElementById("apply-button");
+  const applyFormError = document.getElementById("apply-form-error");
+
+  applyForm.addEventListener("submit", async (evt) => {
+    evt.preventDefault();
+    applyButton.disabled = true;
+    applyFormError.hidden = true;
+    try {
+      const response = await fetch("/runs", { method: "POST", body: new FormData(applyForm) });
+      const text = await response.text();
+      if (!response.ok) {
+        applyFormError.textContent = text || `Request failed (${response.status}).`;
+        applyFormError.hidden = false;
+        return;
+      }
+      openRunTab(text);
+    } catch (err) {
+      applyFormError.textContent = "Request failed: " + err;
+      applyFormError.hidden = false;
+    } finally {
+      applyButton.disabled = false;
+    }
+  });
+
+  document.getElementById("run-list").addEventListener("click", async (evt) => {
+    const link = evt.target.closest(".run-row-link");
+    if (!link) return;
+    const response = await fetch(`/runs/${link.dataset.runId}`);
+    const text = await response.text();
+    if (response.ok) openRunTab(text);
+  });
+
+  syncSelectedRolesSummary();
 </script>
 
 {% endblock %}

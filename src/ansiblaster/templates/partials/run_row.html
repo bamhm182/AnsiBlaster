@@ -1,11 +1,5 @@
 <li id="run-row-{{ run.id }}" class="run-row status-{{ run.status.value }}">
-  <button
-    type="button"
-    class="run-row-link"
-    hx-get="/runs/{{ run.id }}"
-    hx-target="#run-results"
-    hx-swap="afterbegin"
-  >
+  <button type="button" class="run-row-link" data-run-id="{{ run.id }}">
     {{ run.target_user }}@{{ run.target_host }} ({{ run.target_os.value }}) &mdash;
     {{ run.roles | join(", ") }}
   </button>
