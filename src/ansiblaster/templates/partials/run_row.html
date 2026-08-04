@@ -1,0 +1,16 @@
+<li id="run-row-{{ run.id }}" class="run-row status-{{ run.status.value }}">
+  <button
+    type="button"
+    class="run-row-link"
+    hx-get="/runs/{{ run.id }}"
+    hx-target="#run-results"
+    hx-swap="afterbegin"
+  >
+    {{ run.target_user }}@{{ run.target_host }} ({{ run.target_os.value }}) &mdash;
+    {{ run.roles | join(", ") }}
+  </button>
+  <span class="run-row-status">{{ run.status.value }}</span>
+  <time datetime="{{ run.created_at.isoformat() }}">
+    {{ run.created_at.strftime("%Y-%m-%d %H:%M:%S") }}
+  </time>
+</li>

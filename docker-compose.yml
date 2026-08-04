@@ -1,0 +1,33 @@
+services:
+  ansiblaster:
+    # Builds locally by default. To use the published image instead, comment out `build: .`
+    # and change the `image:` line below to `bamhm182/ansiblaster:latest`.
+    build: .
+    image: ansiblaster:latest
+    container_name: ansiblaster
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8000}:8000"
+    environment:
+      # See docker-entrypoint.sh / CLAUDE.md's Distribution section: these remap the
+      # container's built-in user so bind-mounted host directories don't need pre-matching
+      # ownership. Set them to `id -u`/`id -g` of the host user that owns HOST_ROLES_DIR below.
+      PUID: "${PUID:-1000}"
+      PGID: "${PGID:-1000}"
+    volumes:
+      # Your own Ansible roles/playbooks go here -- defaults to the bundled example/ LAMP
+      # stack (see example/README.md) so there's something to see on first run. Read-only:
+      # the app only discovers and executes them (see CLAUDE.md's "Ansible execution"), it
+      # never writes to this directory.
+      - ${HOST_ROLES_DIR:-./example/roles}:/opt/ansible/roles:ro
+      - ${HOST_PLAYBOOKS_DIR:-./example/playbooks}:/opt/ansible/playbooks:ro
+      # Run history: the SQLite db + ansible-runner artifacts. Needs to persist and be
+      # writable, so it's a named volume rather than a host bind mount.
+      - ansiblaster-data:/opt/ansiblaster
+      # Uncomment to override settings via a config.yaml instead of/alongside the env vars
+      # above (see CLAUDE.md's "Configuration file" section). Matches the app's default
+      # discovery path (./config.yaml relative to its WORKDIR) with no extra env var needed.
+      # - ./config.yaml:/app/config.yaml:ro
+
+volumes:
+  ansiblaster-data:

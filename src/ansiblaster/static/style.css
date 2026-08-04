@@ -1,0 +1,121 @@
+:root {
+  color-scheme: light dark;
+  --border: #8884;
+  --accent: #3b6ea5;
+}
+
+body {
+  font-family: system-ui, sans-serif;
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 1rem;
+  line-height: 1.4;
+}
+
+header h1 {
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+fieldset {
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+#target-fields {
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+#target-fields label {
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.role-option,
+.playbook-option {
+  display: inline-block;
+  margin: 0.15rem 0.5rem 0.15rem 0;
+}
+
+.empty-hint {
+  opacity: 0.7;
+  font-style: italic;
+}
+
+.run-list {
+  list-style: none;
+  padding: 0;
+}
+
+.run-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
+  border-bottom: 1px solid var(--border);
+  padding: 0.4rem 0;
+}
+
+.run-row-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+  font: inherit;
+  text-decoration: underline;
+}
+
+.run-row-status {
+  text-transform: capitalize;
+  opacity: 0.8;
+}
+
+.run-detail {
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.run-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.run-detail-close {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+
+.run-detail-meta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.2rem 1rem;
+  margin: 0.5rem 0;
+}
+
+.run-detail-meta dt {
+  font-weight: 600;
+}
+
+.run-detail-meta dd {
+  margin: 0;
+}
+
+.run-log {
+  background: #1114;
+  border-radius: 0.3rem;
+  padding: 0.5rem;
+  max-height: 20rem;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

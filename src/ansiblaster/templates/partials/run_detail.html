@@ -1,0 +1,51 @@
+{% set is_active = run.status.value in ["pending", "running"] %}
+<div
+  id="run-detail-{{ run.id }}"
+  class="run-detail status-{{ run.status.value }}"
+  {% if is_active %}
+  hx-ext="sse"
+  sse-connect="/runs/{{ run.id }}/stream"
+  hx-trigger="sse:done"
+  hx-get="/runs/{{ run.id }}"
+  hx-swap="outerHTML"
+  {% endif %}
+>
+  <div class="run-detail-header">
+    <h3>Run {{ run.id }}</h3>
+    <button
+      type="button"
+      class="run-detail-close"
+      onclick="this.closest('.run-detail').remove()"
+      aria-label="Dismiss"
+    >&times;</button>
+  </div>
+
+  <dl class="run-detail-meta">
+    <dt>Target</dt>
+    <dd>{{ run.target_user }}@{{ run.target_host }}:{{ run.target_port }} ({{ run.target_os.value }})</dd>
+
+    <dt>Roles</dt>
+    <dd>{{ run.roles | join(", ") }}</dd>
+
+    {% if run.playbooks %}
+      <dt>Playbooks</dt>
+      <dd>{{ run.playbooks | join(", ") }}</dd>
+    {% endif %}
+
+    <dt>Status</dt>
+    <dd class="status">{{ run.status.value }}</dd>
+
+    {% if run.return_code is not none %}
+      <dt>Return code</dt>
+      <dd>{{ run.return_code }}</dd>
+    {% endif %}
+  </dl>
+
+  {% if is_active %}
+    <button type="button" hx-post="/runs/{{ run.id }}/cancel" hx-swap="outerHTML" hx-target="this">
+      Cancel
+    </button>
+  {% endif %}
+
+  <pre class="run-log" sse-swap="message" hx-swap="beforeend">{{ initial_log }}</pre>
+</div>

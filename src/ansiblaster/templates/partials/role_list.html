@@ -1,0 +1,16 @@
+<fieldset id="role-checklist">
+  <legend>Roles</legend>
+  {% if roles %}
+    {% for role in roles %}
+      <label class="role-option">
+        <input type="checkbox" name="roles" value="{{ role }}" id="role-{{ role }}">
+        {{ role }}
+      </label>
+    {% endfor %}
+  {% else %}
+    <p class="empty-hint">No roles found.</p>
+  {% endif %}
+  <button type="button" hx-get="/roles" hx-target="#role-list" hx-swap="innerHTML">
+    Refresh roles
+  </button>
+</fieldset>

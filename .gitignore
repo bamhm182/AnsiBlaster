@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# uv / venv
+.venv/
+
+# Test/lint caches
+.pytest_cache/
+.ruff_cache/
+
+# Local runtime state — not something to commit
+config.yaml
+*.db
+artifacts/

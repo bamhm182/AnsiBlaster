@@ -1,0 +1,9 @@
+{% if runs %}
+  <ul class="run-list">
+    {% for run in runs %}
+      {% include "partials/run_row.html" %}
+    {% endfor %}
+  </ul>
+{% else %}
+  <p class="empty-hint">No runs yet.</p>
+{% endif %}

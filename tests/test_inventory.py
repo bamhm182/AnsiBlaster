@@ -1,0 +1,123 @@
+from __future__ import annotations
+
+from ansiblaster.inventory import HOST_ALIAS, build_inventory, default_port
+from ansiblaster.models import TargetOS
+
+
+def test_default_port_linux():
+    assert default_port(TargetOS.LINUX) == 22
+
+
+def test_default_port_windows():
+    assert default_port(TargetOS.WINDOWS) == 5985
+
+
+def test_build_inventory_uses_single_host_alias():
+    inventory = build_inventory(
+        target_os=TargetOS.LINUX,
+        target_host="192.168.1.10",
+        target_port=22,
+        target_user="root",
+        target_password="hunter2",
+    )
+
+    hosts = inventory["all"]["hosts"]
+    assert list(hosts.keys()) == [HOST_ALIAS]
+
+
+def test_build_inventory_linux_sets_ssh_connection_vars():
+    inventory = build_inventory(
+        target_os=TargetOS.LINUX,
+        target_host="192.168.1.10",
+        target_port=2222,
+        target_user="root",
+        target_password="hunter2",
+    )
+
+    host_vars = inventory["all"]["hosts"][HOST_ALIAS]
+    assert host_vars["ansible_connection"] == "ssh"
+    assert host_vars["ansible_host"] == "192.168.1.10"
+    assert host_vars["ansible_port"] == 2222
+    assert host_vars["ansible_user"] == "root"
+    assert host_vars["ansible_password"] == "hunter2"
+
+
+def test_build_inventory_linux_reuses_login_password_for_become():
+    inventory = build_inventory(
+        target_os=TargetOS.LINUX,
+        target_host="192.168.1.10",
+        target_port=22,
+        target_user="deploy",
+        target_password="hunter2",
+    )
+
+    host_vars = inventory["all"]["hosts"][HOST_ALIAS]
+    assert host_vars["ansible_become_password"] == "hunter2"
+
+
+def test_build_inventory_linux_disables_strict_host_key_checking():
+    inventory = build_inventory(
+        target_os=TargetOS.LINUX,
+        target_host="192.168.1.10",
+        target_port=22,
+        target_user="root",
+        target_password="hunter2",
+    )
+
+    host_vars = inventory["all"]["hosts"][HOST_ALIAS]
+    assert "StrictHostKeyChecking=no" in host_vars["ansible_ssh_common_args"]
+    assert "UserKnownHostsFile=/dev/null" in host_vars["ansible_ssh_common_args"]
+
+
+def test_build_inventory_windows_sets_winrm_connection_vars_with_ntlm():
+    inventory = build_inventory(
+        target_os=TargetOS.WINDOWS,
+        target_host="10.0.0.5",
+        target_port=5985,
+        target_user="Administrator",
+        target_password="hunter2",
+    )
+
+    host_vars = inventory["all"]["hosts"][HOST_ALIAS]
+    assert host_vars["ansible_connection"] == "winrm"
+    assert host_vars["ansible_winrm_transport"] == "ntlm"
+    assert host_vars["ansible_host"] == "10.0.0.5"
+    assert host_vars["ansible_port"] == 5985
+    assert host_vars["ansible_user"] == "Administrator"
+    assert host_vars["ansible_password"] == "hunter2"
+
+
+def test_build_inventory_windows_scheme_is_http_for_default_port():
+    inventory = build_inventory(
+        target_os=TargetOS.WINDOWS,
+        target_host="10.0.0.5",
+        target_port=5985,
+        target_user="Administrator",
+        target_password="hunter2",
+    )
+
+    assert inventory["all"]["hosts"][HOST_ALIAS]["ansible_winrm_scheme"] == "http"
+
+
+def test_build_inventory_windows_scheme_is_https_for_5986():
+    inventory = build_inventory(
+        target_os=TargetOS.WINDOWS,
+        target_host="10.0.0.5",
+        target_port=5986,
+        target_user="Administrator",
+        target_password="hunter2",
+    )
+
+    assert inventory["all"]["hosts"][HOST_ALIAS]["ansible_winrm_scheme"] == "https"
+
+
+def test_build_inventory_windows_ignores_cert_validation():
+    inventory = build_inventory(
+        target_os=TargetOS.WINDOWS,
+        target_host="10.0.0.5",
+        target_port=5986,
+        target_user="Administrator",
+        target_password="hunter2",
+    )
+
+    assert inventory["all"]["hosts"][HOST_ALIAS]["ansible_winrm_server_cert_validation"] == "ignore"

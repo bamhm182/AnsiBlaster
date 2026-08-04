@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block content %}
+
+<form id="apply-form" hx-post="/runs" hx-target="#run-results" hx-swap="afterbegin">
+  <section id="role-list-section">
+    <div id="role-list">
+      {% include "partials/role_list.html" %}
+    </div>
+  </section>
+
+  <section id="playbook-list-section">
+    <div id="playbook-list">
+      {% include "partials/playbook_list.html" %}
+    </div>
+  </section>
+
+  <section id="target-fields">
+    <legend>Target</legend>
+
+    <label>
+      OS
+      <select name="target_os" id="target-os-select" onchange="applyOsDefaults(this)">
+        <option value="linux">Linux</option>
+        <option value="windows">Windows</option>
+      </select>
+    </label>
+
+    <label>
+      IP address
+      <input type="text" name="target_host" required>
+    </label>
+
+    <label>
+      Port
+      <input type="number" name="target_port" id="target-port-input"
+             value="{{ default_ports['linux'] }}" required>
+    </label>
+
+    <label>
+      Username
+      <input type="text" name="target_user" id="target-user-input"
+             value="{{ defaults.linux.username }}" required>
+    </label>
+
+    <label>
+      Password
+      <input type="password" name="target_password" id="target-password-input"
+             value="{{ defaults.linux.password }}">
+    </label>
+  </section>
+
+  <button type="submit">Apply</button>
+</form>
+
+<section id="run-results"></section>
+
+<section id="run-history">
+  <h2>Run history</h2>
+  <div id="run-list">
+    {% include "partials/run_list.html" %}
+  </div>
+  <button type="button" hx-get="/runs" hx-target="#run-list" hx-swap="innerHTML">
+    Refresh history
+  </button>
+</section>
+
+<script>
+  // Per-OS defaults baked in at page render time (see CLAUDE.md's "Playbooks" and
+  // "Configuration file" sections) -- swapping the OS select pre-fills port/username/password
+  // without a server round trip; the user can still edit any of them before submitting.
+  const OS_DEFAULTS = {
+    linux: {
+      port: {{ default_ports['linux'] }},
+      username: {{ defaults.linux.username | tojson_script }},
+      password: {{ defaults.linux.password | tojson_script }}
+    },
+    windows: {
+      port: {{ default_ports['windows'] }},
+      username: {{ defaults.windows.username | tojson_script }},
+      password: {{ defaults.windows.password | tojson_script }}
+    }
+  };
+
+  function applyOsDefaults(select) {
+    const values = OS_DEFAULTS[select.value];
+    if (!values) return;
+    document.getElementById("target-port-input").value = values.port;
+    document.getElementById("target-user-input").value = values.username;
+    document.getElementById("target-password-input").value = values.password;
+  }
+
+  // Selecting a playbook only ever *adds* checks -- it never unchecks a role, and never
+  // makes a round trip to the server (see CLAUDE.md's "Playbooks (role presets)" section).
+  function applyPlaybook(button) {
+    const roles = JSON.parse(button.dataset.roles);
+    roles.forEach((role) => {
+      const checkbox = document.getElementById("role-" + role);
+      if (checkbox) checkbox.checked = true;
+    });
+    const playbookCheckbox = document.getElementById("playbook-" + button.dataset.playbook);
+    if (playbookCheckbox) playbookCheckbox.checked = true;
+  }
+</script>
+
+{% endblock %}
