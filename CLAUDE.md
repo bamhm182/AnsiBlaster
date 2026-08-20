@@ -20,9 +20,11 @@ A small web UI for running Ansible roles against a single target host on demand:
    — a named preset (e.g. "LAMP") that checks a predefined set of roles (e.g. `apache`, `mysql`,
    `php`) in one click. Playbook clicks only *add* checks; the user can still uncheck individual
    roles or combine/stack multiple playbooks and manual picks before applying.
-3. The user fills in target connection details: OS (Linux or Windows), IP address, port,
-   username, password. Username/password fields are pre-filled from configured per-OS defaults
-   but remain editable before submitting.
+3. The user fills in target connection details: IP address, port, username, password. There is
+   no separate Linux/Windows picker — the OS is implied by which port preset is chosen (see
+   "Backend & UI" below) — and username/password fields are pre-filled from configured per-OS
+   defaults but remain editable before submitting. A status dot next to the port field shows a
+   quick reachability check once the field loses focus.
 4. Clicking "Apply" launches an Ansible run (via `ansible-runner`) that applies the selected
    roles to that single target host, authenticating over SSH (Linux, via `sshpass`) or WinRM
    (Windows), depending on the chosen OS.
@@ -59,7 +61,16 @@ logs) is persisted so past runs can be reviewed later.
   checked (`syncSelectedRolesSummary()`, delegated off `change` events so it survives a
   role-list refresh) — unchecking happens back in the Roles column, not in this summary. The
   Apply button is pinned outside the column's scrollable areas, `flex: 0 0 auto` after two
-  `flex: 1` scrolling sections (selected-roles summary, then the target form).
+  `flex: 1` scrolling sections (selected-roles summary, then the target form). There is no
+  visible Linux/Windows picker in the target form: a `<select>` of port presets ("22 (SSH)" /
+  "5985 (WinRM)", defaulting to 22) both fills in the port field and implies the OS, written
+  into a hidden `target_os` input (`applyPortPreset()` in `index.html`) — the only thing
+  actually submitted for OS is that hidden field, so `POST /runs` and everything downstream of
+  it (inventory building, `become`, etc.) are unchanged. A status dot next to the port field
+  calls `GET /target/check-port` (a plain, service-agnostic TCP connect — see `portcheck.py`)
+  whenever that field loses focus, via plain `fetch()` rather than htmx so the request's query
+  string can't end up including the password field's value the way htmx's default form-scraping
+  would.
 - Below the three columns, a full-width collapsible panel has two tabs: **Log** (one sub-tab
   per concurrent run, opened by submitting the form or clicking a run in History) and
   **History** (`GET /runs`, restyled but otherwise unchanged). Role/playbook checkboxes live in
@@ -258,6 +269,7 @@ foreign key to some playbook table (playbooks aren't DB entities either — they
 | `GET /runs/{job_id}/stream` | SSE endpoint — live log lines + status transitions for the job; closes when the run ends |
 | `GET /runs/{job_id}/log` | Full plain-text log — used for replaying a finished run, or backfilling before SSE attaches |
 | `POST /runs/{job_id}/cancel` | Cancel an in-progress run (`ansible-runner` stop) → status becomes `canceled` |
+| `GET /target/check-port` | JSON `{"open": bool}` — quick, service-agnostic TCP reachability check for the Deploy column's port status dot (`host`/`port` query params) |
 
 ## Configuration file
 
@@ -334,6 +346,9 @@ src/ansiblaster/
 │                       # persists status/log to DB and pushes lines to the job's queue.
 │                       # Also stdout_log_path(run), mirroring ansible-runner's own
 │                       # private_data_dir/artifacts/<ident>/stdout convention
+├── portcheck.py        # check_port(host, port): a plain, service-agnostic async TCP connect
+│                       # (not a protocol-specific banner grab) backing the Deploy column's
+│                       # port status dot
 ├── routes/
 │   ├── __init__.py     # aggregates routers for app.py to include
 │   ├── pages.py        # GET /
@@ -341,8 +356,9 @@ src/ansiblaster/
 │   │                   # that one discovers roles, this one serves the HTTP fragment)
 │   ├── playbooks.py    # GET /playbooks fragment (distinct from top-level playbooks.py, same
 │   │                   # naming pattern as roles.py above)
-│   └── runs.py         # POST /runs, GET /runs, GET /runs/{job_id}, GET /runs/{job_id}/stream,
-│                       # GET /runs/{job_id}/log, POST /runs/{job_id}/cancel
+│   ├── runs.py         # POST /runs, GET /runs, GET /runs/{job_id}, GET /runs/{job_id}/stream,
+│   │                   # GET /runs/{job_id}/log, POST /runs/{job_id}/cancel
+│   └── target.py       # GET /target/check-port -- thin JSON wrapper around portcheck.py
 ├── templates/
 │   ├── base.html
 │   ├── index.html       # 3-column workspace + bottom panel; owns nearly all client-side JS
@@ -361,8 +377,9 @@ src/ansiblaster/
 ```
 
 - `tests/` mirrors this layout alongside `src/` (not inside the package): `test_roles.py`,
-  `test_playbooks.py`, `test_inventory.py`, `test_jobs.py`, `test_routes_pages.py`,
-  `test_routes_roles.py`, `test_routes_playbooks.py`, `test_routes_runs.py`, plus a shared
+  `test_playbooks.py`, `test_inventory.py`, `test_jobs.py`, `test_portcheck.py`,
+  `test_routes_pages.py`, `test_routes_roles.py`, `test_routes_playbooks.py`,
+  `test_routes_runs.py`, `test_routes_target.py`, plus a shared
   `conftest.py` (the `client` fixture — a `TestClient` wired to per-test tmp_path
   roles/playbooks/artifacts/DB paths — and `make_role`/`make_playbook` helpers).
 - Tests mock `ansible-runner` execution (`monkeypatch.setattr("ansiblaster.jobs.ansible_runner.run_async", ...)`)

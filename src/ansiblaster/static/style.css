@@ -310,9 +310,13 @@ main {
 
 /* IP/port and username/password each share a row instead of stacking full-width -- the row
    itself carries the bottom margin so its two labels don't double it up. min-width: 0 lets a
-   flex item shrink below its input's intrinsic width instead of overflowing the row. */
+   flex item shrink below its input's intrinsic width instead of overflowing the row.
+   align-items: flex-start keeps .field-host from being stretched to match .field-port's height
+   now that the Port column holds two stacked controls (preset select + input/dot row) instead
+   of just one -- default flex stretch would otherwise pad the shorter column with dead space. */
 .field-row {
   display: flex;
+  align-items: flex-start;
   gap: 0.5rem;
   margin-bottom: 0.65rem;
 }
@@ -321,7 +325,7 @@ main {
   min-width: 0;
 }
 .field-row-host .field-host {
-  flex: 3;
+  flex: 2;
 }
 .field-row-host .field-port {
   flex: 1;
@@ -345,6 +349,58 @@ main {
 .deploy-target select:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+/* Port preset dropdown ("22 (SSH)" / "5985 (WinRM)") + the port number input it fills in, plus
+   the reachability status dot next to that input -- see index.html's applyPortPreset() and
+   checkTargetPort(). Smaller font than the rest of .deploy-target's controls since this whole
+   group lives in the narrower Port column alongside the wider IP address field. */
+.port-preset-select {
+  font-size: 0.72rem;
+  padding: 0.3rem 0.4rem;
+}
+
+.port-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+}
+.port-input-row input {
+  flex: 1;
+  min-width: 0;
+  margin-top: 0; /* .port-input-row itself carries the spacing above instead */
+}
+
+.port-status-dot {
+  flex: 0 0 auto;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--bg-inset);
+  border: 1px solid var(--selection);
+}
+.port-status-dot.is-checking {
+  background: var(--yellow);
+  border-color: var(--yellow);
+  animation: port-status-pulse 1s ease-in-out infinite;
+}
+.port-status-dot.is-open {
+  background: var(--green);
+  border-color: var(--green);
+}
+.port-status-dot.is-closed {
+  background: var(--red);
+  border-color: var(--red);
+}
+@keyframes port-status-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 .apply-button {

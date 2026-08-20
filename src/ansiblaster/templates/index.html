@@ -60,13 +60,11 @@
         </div>
 
         <div class="deploy-target">
-          <label>
-            OS
-            <select name="target_os" id="target-os-select" onchange="applyOsDefaults(this)">
-              <option value="linux">Linux</option>
-              <option value="windows">Windows</option>
-            </select>
-          </label>
+          <!-- Which OS this run targets is now inferred entirely from the port preset picked
+               below (22/SSH -> linux, 5985/WinRM -> windows) rather than surfaced as its own
+               Linux/Windows choice -- still submitted as target_os, just no longer a visible
+               field of its own. -->
+          <input type="hidden" name="target_os" id="target-os-select" value="linux">
 
           <div class="field-row field-row-host">
             <label class="field-host">
@@ -75,8 +73,29 @@
             </label>
             <label class="field-port">
               Port
-              <input type="number" name="target_port" id="target-port-input"
-                     value="{{ default_ports['linux'] }}" required>
+              <select
+                id="target-port-preset"
+                class="port-preset-select"
+                aria-label="Port preset"
+                onchange="applyPortPreset(this)"
+              >
+                <option value="{{ default_ports['linux'] }}" data-os="linux" selected>
+                  {{ default_ports['linux'] }} (SSH)
+                </option>
+                <option value="{{ default_ports['windows'] }}" data-os="windows">
+                  {{ default_ports['windows'] }} (WinRM)
+                </option>
+              </select>
+              <div class="port-input-row">
+                <input type="number" name="target_port" id="target-port-input"
+                       value="{{ default_ports['linux'] }}" required>
+                <span
+                  id="port-status-dot"
+                  class="port-status-dot"
+                  title="Not checked yet."
+                  aria-label="Port status: not checked"
+                ></span>
+              </div>
             </label>
           </div>
 
@@ -148,7 +167,9 @@
 <script>
   // ---------------------------------------------------------------------
   // Per-OS defaults (see CLAUDE.md's "Playbooks" and "Configuration file" sections) --
-  // swapping the OS select pre-fills port/username/password without a server round trip.
+  // applied whenever #target-os-select's value changes programmatically (there's no visible
+  // Linux/Windows control anymore; see applyPortPreset() below and loadRunIntoDeploy()) to
+  // pre-fill port/username/password without a server round trip.
   // ---------------------------------------------------------------------
   const OS_DEFAULTS = {
     linux: {
@@ -170,6 +191,59 @@
     document.getElementById("target-user-input").value = values.username;
     document.getElementById("target-password-input").value = values.password;
   }
+
+  // ---------------------------------------------------------------------
+  // Port preset dropdown: picking "22 (SSH)"/"5985 (WinRM)" is now how a run's OS gets chosen
+  // (there's no separate Linux/Windows field to keep in sync with it) -- each <option> carries
+  // the OS it implies via data-os, which drives #target-os-select (hidden, still what actually
+  // gets submitted) and, through it, applyOsDefaults()'s port/username/password fill-in.
+  // ---------------------------------------------------------------------
+  function applyPortPreset(select) {
+    const os = select.selectedOptions[0]?.dataset.os || "linux";
+    const osField = document.getElementById("target-os-select");
+    osField.value = os;
+    applyOsDefaults(osField);
+    resetPortStatusDot();
+  }
+
+  // ---------------------------------------------------------------------
+  // Port status dot: a quick, service-agnostic reachability check (see portcheck.py -- a bare
+  // TCP connect, not a protocol-specific banner grab, since that wouldn't mean the same thing
+  // for WinRM as it does for SSH) run whenever the Port field loses focus. Plain fetch()
+  // rather than htmx: htmx's default parameter collection would scrape every field in
+  // #apply-form (since host/port both live inside it), which would put the password field's
+  // value into this GET request's query string for no reason.
+  // ---------------------------------------------------------------------
+  function resetPortStatusDot() {
+    const dot = document.getElementById("port-status-dot");
+    dot.className = "port-status-dot";
+    dot.title = "Not checked yet.";
+  }
+
+  async function checkTargetPort() {
+    const host = document.getElementById("target-host-input").value.trim();
+    const port = document.getElementById("target-port-input").value.trim();
+    const dot = document.getElementById("port-status-dot");
+    if (!host || !port) {
+      resetPortStatusDot();
+      return;
+    }
+    dot.className = "port-status-dot is-checking";
+    dot.title = "Checking…";
+    try {
+      const response = await fetch(
+        `/target/check-port?host=${encodeURIComponent(host)}&port=${encodeURIComponent(port)}`
+      );
+      const result = await response.json();
+      dot.className = "port-status-dot " + (result.open ? "is-open" : "is-closed");
+      dot.title = result.open ? "Port is open." : "Port is closed or unreachable.";
+    } catch (err) {
+      dot.className = "port-status-dot is-closed";
+      dot.title = "Check failed: " + err;
+    }
+  }
+
+  document.getElementById("target-port-input").addEventListener("blur", checkTargetPort);
 
   // ---------------------------------------------------------------------
   // Playbooks only ever *add* checks -- never a round trip to the server (see CLAUDE.md's
@@ -455,6 +529,12 @@
     document.getElementById("target-host-input").value = detail.dataset.targetHost;
     document.getElementById("target-port-input").value = detail.dataset.targetPort;
     document.getElementById("target-user-input").value = detail.dataset.targetUser;
+    // Reflects the run's port in the preset dropdown too, if it happens to match one of the
+    // presets -- if it was a custom port, .value falls back to no option selected, which is
+    // more honest than showing a preset that doesn't actually match. Either way, the hidden
+    // target-os-select above (not this dropdown) is what's actually authoritative and submitted.
+    document.getElementById("target-port-preset").value = detail.dataset.targetPort;
+    resetPortStatusDot();
 
     document.querySelectorAll('input[name="roles"]').forEach((checkbox) => {
       checkbox.checked = false;
