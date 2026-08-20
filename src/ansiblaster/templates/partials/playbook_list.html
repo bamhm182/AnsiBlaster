@@ -2,9 +2,11 @@
   {% for name, roles in playbooks.items() %}
     {# A plain <div>, not a <button>, is the "row" here: it holds two buttons (apply + view),
        and a button can't nest inside a button per the HTML content model -- same reasoning as
-       index.html's run tabs (see CLAUDE.md's "Live logs" section). #}
+       index.html's run tabs (see CLAUDE.md's "Live logs" section). No checkbox here (unlike
+       role_list.html) -- playbooks are only ever a client-side shortcut for checking roles
+       (applyPlaybook() below), never submitted or tracked themselves (see CLAUDE.md's
+       "Playbooks (role presets)" section). #}
     <div class="list-item playbook-item" data-filter-name="{{ name }}">
-      <input type="checkbox" name="playbooks" value="{{ name }}" id="playbook-{{ name }}" form="apply-form" hidden>
       <button
         type="button"
         class="playbook-button"

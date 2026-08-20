@@ -22,9 +22,10 @@ A small web UI for running Ansible roles against a single target host on demand:
    roles or combine/stack multiple playbooks and manual picks before applying.
 3. The user fills in target connection details: IP address, port, username, password. There is
    no separate Linux/Windows picker — the OS is implied by which port preset is chosen (see
-   "Backend & UI" below) — and username/password fields are pre-filled from configured per-OS
-   defaults but remain editable before submitting. A status dot next to the port field shows a
-   quick reachability check once the field loses focus.
+   "Backend & UI" below) — and username/password fields are pre-filled from configured
+   per-preset defaults but remain editable before submitting. A status dot shows a quick
+   reachability check whenever the IP address or Port field loses focus, or a new preset is
+   picked.
 4. Clicking "Apply" launches an Ansible run (via `ansible-runner`) that applies the selected
    roles to that single target host, authenticating over SSH (Linux, via `sshpass`), WinRM, or
    PSRP (the latter two both Windows), depending on the chosen preset.
@@ -57,55 +58,68 @@ logs) is persisted so past runs can be reviewed later.
   (VS Code command-palette style: query characters must appear in order, not contiguously —
   see `fuzzyMatch()` in `index.html`) that filters the already-rendered list with no server
   round trip per keystroke, and re-applies itself after a list is refreshed. The Deploy
-  column's top third is a read-only reflection of whichever role checkboxes are currently
+  column's top section is a read-only reflection of whichever role checkboxes are currently
   checked (`syncSelectedRolesSummary()`, delegated off `change` events so it survives a
-  role-list refresh) — unchecking happens back in the Roles column, not in this summary. The
-  Apply button is pinned outside the column's scrollable areas, `flex: 0 0 auto` after two
-  `flex: 1` scrolling sections (selected-roles summary, then the target form). There is no
-  visible Linux/Windows picker in the target form: a small "SSH"/"WinRM"/"PSRP" `<select>` is
-  merged with the port number input into one bordered control (`.port-field-group` in
-  `style.css` — the select and input themselves are borderless/transparent so only the group's
-  shared border shows, making them read as one field rather than two) — picking a preset fills
-  the port input (22/5985/5985, still freely editable afterward for a non-standard port) and
-  writes the OS+connection it implies into a hidden `target_os` input (`applyPortPreset()` in
-  `index.html`). That hidden field is the only thing actually submitted for OS, so `POST /runs`
-  and everything downstream of it (inventory building, `become`, etc.) are unchanged by any of
-  this. WinRM and PSRP are two different Ansible connection plugins/Python libraries
-  (`pywinrm`/`pypsrp`) that both talk to the same Windows WinRM listener, so they get their own
-  `TargetOS` members (`WINDOWS`/`WINDOWS_PSRP`) but share a default port and are otherwise
-  treated identically everywhere except `inventory.py` (see "Ansible execution" below). A
-  dedicated Status row ("Status: ⬤ <text>") sits just above the Apply button, outside the
-  scrollable target form like the button itself, and shows a quick reachability check
-  (`checkTargetPort()`/`resetPortStatusDot()` in `index.html`, calling `GET /target/check-port`
-  — see `portcheck.py`) run whenever the port field loses focus *or* a port preset is picked
-  (`applyPortPreset()` calls `checkTargetPort()` directly rather than just resetting the dot,
-  since the port/protocol just changed out from under whatever was last checked): the text is
-  whatever banner the target volunteers unprompted (e.g. `SSH-2.0-OpenSSH_10.2`, the same thing
-  `nc host port` would show), since a protocol like SSH sends that the instant a connection
-  opens. WinRM/PSRP targets just show "open, no banner" — both are HTTP/SOAP underneath, and
-  HTTP is request-driven, so nothing arrives until the client sends a request first, which this
-  check deliberately never does (keeping the same passive connect-and-listen behavior for every
-  target rather than branching per protocol is what makes it "service-agnostic"). That call is
-  plain `fetch()` rather than htmx so the request's query string can't end up including the
-  password field's value the way htmx's default form-scraping would. A small refresh
-  (`.icon-button`, the same one used elsewhere) sits to the left of the dot to re-run the check
-  on demand, calling the same `checkTargetPort()`.
+  role-list refresh) — unchecking happens back in the Roles column, not in this summary, though
+  each entry also gets its own eyeball button (same as Roles/Playbooks, see "Viewer tab" below)
+  so a selected role's files can be checked without leaving the Deploy column. `flex: 1 1 auto`
+  on this summary vs. `flex: 0 0 auto` on the target form below it means the summary claims
+  whatever space the target form (a handful of fixed fields) doesn't need, rather than the two
+  splitting a fixed percentage of the column regardless of content. The Apply button is pinned
+  outside the column's scrollable areas, `flex: 0 0 auto` after those two sections. There is no
+  visible Linux/Windows picker in the target form: a small "SSH"/"WinRM"/"WinRM (Secure)"/
+  "PSRP"/"PSRP (Secure)" `<select>` is merged with the port number input into one bordered
+  control (`.port-field-group` in `style.css` — the select and input themselves are
+  borderless/transparent so only the group's shared border shows, making them read as one field
+  rather than two) — picking a preset writes the OS+connection it implies into a hidden
+  `target_os` input and fills the port input from the *selected `<option>`'s own value*, not a
+  per-OS lookup table (`applyPortPreset()` in `index.html`): WinRM and WinRM (Secure) share an
+  OS/connection (so a per-OS port lookup can't tell them apart) but need different actual ports
+  (5985 vs 5986), same for the two PSRP options. The port stays freely editable afterward (e.g.
+  a non-standard SSH port). That hidden `target_os` field is the only thing actually submitted
+  for OS, so `POST /runs` and everything downstream of it (inventory building, `become`, etc.)
+  are unchanged by any of this. WinRM and PSRP are two different Ansible connection
+  plugins/Python libraries (`pywinrm`/`pypsrp`) that both talk to the same Windows WinRM
+  listener (secure or not), so they get their own `TargetOS` members (`WINDOWS`/`WINDOWS_PSRP`)
+  but share default ports and are otherwise treated identically everywhere except
+  `inventory.py` (see "Ansible execution" below). A dedicated Status row ("Status: ⟳ ⬤ <text>")
+  sits just above the Apply button, outside the scrollable target form like the button itself,
+  and shows a quick reachability check (`checkTargetPort()`/`resetPortStatusDot()` in
+  `index.html`, calling `GET /target/check-port` — see `portcheck.py`) run whenever the IP
+  address field *or* the Port field loses focus, or a port preset is picked (`applyPortPreset()`
+  calls `checkTargetPort()` directly rather than just resetting the dot, since the port/protocol
+  just changed out from under whatever was last checked): the text is whatever banner the
+  target volunteers unprompted (e.g. `SSH-2.0-OpenSSH_10.2`, the same thing `nc host port` would
+  show), since a protocol like SSH sends that the instant a connection opens. WinRM/PSRP targets
+  just show "open, no banner" — both are HTTP/SOAP underneath, and HTTP is request-driven, so
+  nothing arrives until the client sends a request first, which this check deliberately never
+  does (keeping the same passive connect-and-listen behavior for every target rather than
+  branching per protocol is what makes it "service-agnostic"). That call is plain `fetch()`
+  rather than htmx so the request's query string can't end up including the password field's
+  value the way htmx's default form-scraping would. A small refresh (`.icon-button`, the same
+  one used elsewhere) sits to the left of the dot to re-run the check on demand, calling the
+  same `checkTargetPort()`.
 - Below the three columns, a full-width collapsible panel has three tabs: **Log** (one sub-tab
   per concurrent run, opened by submitting the form or clicking a run in History), **History**
   (`GET /runs`, restyled but otherwise unchanged), and **Viewer** (a read-only file browser, see
-  below). Role/playbook checkboxes live in their own columns, outside `<form id="apply-form">`
-  (which now wraps only the Deploy column, since that's where the Apply button lives) — they're
+  below). Role checkboxes live in their own column, outside `<form id="apply-form">` (which
+  now wraps only the Deploy column, since that's where the Apply button lives) — they're
   associated to that form via the HTML5 `form="apply-form"` attribute rather than DOM nesting,
-  which is what both `FormData(form)` and native form submission need to pick them up.
-- **Viewer tab**: every role and playbook row in the Playbooks/Roles columns has an eyeball
-  button (`.icon-button.eyeball-button`, an inline SVG rather than an emoji character — a
-  colored emoji glyph would clash with the otherwise monochrome Dracula icon set, and rendering
-  is font/platform-dependent in a way a `stroke="currentColor"` SVG isn't; the path is shared
-  via `partials/eye_icon.html` rather than duplicated in both list partials) right after its
-  name. It's invisible (`visibility: hidden`, not `display: none`, so it doesn't shift the
-  row's layout when it appears) until its row is hovered or it has keyboard focus — clicking it
-  switches the bottom panel to the Viewer tab and loads that item's files into a two-pane
-  read-only browser
+  which is what both `FormData(form)` and native form submission need to pick them up. Playbook
+  buttons carry no form control at all (see "Playbooks (role presets)" below) — they only ever
+  drive role checkboxes via client-side JS, so there's nothing of theirs for a form to submit.
+- **Viewer tab**: every role and playbook row in the Playbooks/Roles columns, *and* every role
+  in the Deploy column's selected-roles summary, has an eyeball button (`.icon-button
+  .eyeball-button`, an inline SVG rather than an emoji character — a colored emoji glyph would
+  clash with the otherwise monochrome Dracula icon set, and rendering is font/platform-dependent
+  in a way a `stroke="currentColor"` SVG isn't; the SVG markup is shared three ways: a Jinja
+  partial, `partials/eye_icon.html`, for the two server-rendered lists, and a JS constant,
+  `EYE_ICON_SVG` in `index.html` -- built by `{% include %}`ing that same partial into a
+  template literal -- for the selected-roles summary, since that list is built client-side and
+  can't `{% include %}` a partial into its own markup at runtime) right after its name. It's
+  invisible (`visibility: hidden`, not `display: none`, so it doesn't shift the row's layout
+  when it appears) until its row is hovered or it has keyboard focus — clicking it switches the
+  bottom panel to the Viewer tab and loads that item's files into a two-pane read-only browser
   (`.viewer-file-list` + `.viewer-file-content`), via `openViewer(kind, name)` in `index.html`
   calling `GET /{roles|playbooks}/{name}/files` (`partials/file_browser.html`) and, per file
   clicked, `GET /{roles|playbooks}/{name}/file?path=...` (`partials/file_content.html`) — both
@@ -147,8 +161,11 @@ logs) is persisted so past runs can be reviewed later.
   click. Because it only ever adds checks, this naturally unions with whatever roles are already
   checked (individually or from another playbook) with no extra request needed.
 - Playbooks are a convenience layer only — they do not change what gets submitted or how a run
-  executes. `POST /runs` still just receives whatever roles ended up checked (see Data model &
-  routes), regardless of whether they came from a playbook, manual picks, or both.
+  executes, and they are not tracked once a run is created. `POST /runs` only ever receives
+  `roles[]` (see Data model & routes); there's no `playbooks[]` field and no record anywhere of
+  which playbook(s), if any, contributed to a given run's role selection — a run's history is
+  just the roles that were actually applied, the same regardless of whether they came from a
+  playbook, manual picks, or both.
 
 ### Ansible execution
 
@@ -243,9 +260,14 @@ logs) is persisted so past runs can be reviewed later.
   `loadRunIntoDeploy(runId)`, reading the target fields back off `run_detail.html`'s own
   `data-target-os`/`data-target-port`/`data-target-user`/`data-roles` attributes. It replaces
   the current role selection outright (unlike a playbook click, which only ever adds checks) so
-  it exactly mirrors that run. The password field is deliberately left at that OS's *configured*
-  default rather than the run's actual password — the actual password was never persisted (see
-  the `runs` table's password note below) — so there's nothing else to offer there.
+  it exactly mirrors that run, and reflects the run's OS/connection in the port preset dropdown
+  too, matched by `data-os` *and* port together first (falling back to a `data-os`-only match,
+  then to no selection) since WinRM/PSRP's plain and "(Secure)" presets now share a `data-os`.
+  The run's actual password was never persisted (see the `runs` table's password note below),
+  so there's nothing to restore it to -- but a password the user already *typed* into the form
+  before clicking this is worth more than the configured default, so it's preserved rather than
+  clobbered: `loadRunIntoDeploy()` only lets `applyOsDefaults()`'s default password through when
+  the Password field was empty beforehand, restoring whatever was there otherwise.
 - **The History tab refreshes itself** (`refreshHistory()`, a `fetch("/runs")` that replaces
   `#run-list`'s `innerHTML`) rather than requiring the panel's manual "Refresh history" button —
   called right after a run is submitted (so it appears as `pending`/`running` immediately),
@@ -287,12 +309,11 @@ logs) is persisted so past runs can be reviewed later.
 | Column | Type | Notes |
 |---|---|---|
 | `id` | `String` (UUID), PK | Also used as the `ansible-runner` `ident` / `private_data_dir` name |
-| `target_os` | `String`/enum, not null | `linux`, `windows`, or `windows_psrp` — determines the connection method used |
+| `target_os` | `String`/enum, not null | `linux`, `windows`, or `windows_psrp` — determines the connection method used. Never shown to the user as-is: `inventory.connection_label(target_os, target_port)` (a `connection_label` Jinja filter, registered in `deps.py`) maps it back to whatever port preset produces it -- "SSH"/"WinRM"/"WinRM (Secure)"/"PSRP"/"PSRP (Secure)" -- for display in run history/detail, since that's what the user actually picked (see "Backend & UI" above) |
 | `target_host` | `String`, not null | IP address entered by the user |
 | `target_port` | `Integer`, not null | Default `22` for `linux`, `5985` for `windows`/`windows_psrp` (chosen by the form/route, not the DB) |
 | `target_user` | `String`, not null | |
-| `roles` | `JSON` (list[str]), not null | Snapshot of selected role names at submit time (regardless of whether they came from a playbook, manual picks, or both) |
-| `playbooks` | `JSON` (list[str]), nullable | Name(s) of any playbook(s) used to seed the selection (empty/null if the run was built purely from ad hoc role picks). Purely informational — `roles` above is still the source of truth for what actually ran |
+| `roles` | `JSON` (list[str]), not null | Snapshot of selected role names at submit time (regardless of whether they came from a playbook, manual picks, or both — playbooks themselves aren't tracked, see "Playbooks (role presets)" above) |
 | `status` | `String`/enum, not null, default `pending` | `pending → running → successful \| failed \| canceled \| error` |
 | `return_code` | `Integer`, nullable | ansible-runner's `rc` once finished |
 | `created_at` | `DateTime`, not null | |
@@ -308,9 +329,9 @@ config (see "Configuration file" below).
 
 Roles are recorded as a JSON snapshot rather than a normalized association table — roles are
 filesystem-defined, not DB entities, so a run's `roles` column is just an immutable record of
-what was selected at submit time, not a live reference. `playbooks` is the same idea applied to
-whichever playbook(s) contributed to that selection: a snapshot for history/audit purposes, not a
-foreign key to some playbook table (playbooks aren't DB entities either — they're files).
+what was selected at submit time, not a live reference. There's no equivalent column for
+playbooks: they're a client-side-only convenience for checking roles (see "Playbooks (role
+presets)" above), not something a run's history needs to remember.
 
 ### Routes
 
@@ -324,7 +345,7 @@ foreign key to some playbook table (playbooks aren't DB entities either — they
 | `GET /playbooks/{name}/files` | HTMX fragment — Viewer tab file list for one playbook (always one entry, its own file) |
 | `GET /playbooks/{name}/file` | HTMX fragment — that file's read-only content (`path` query param) |
 | `GET /runs` | HTMX fragment/page — run history list |
-| `POST /runs` | Create a run (`roles[]`, `playbooks[]` (informational, may be empty), `target_os`, `target_host`, `target_port`, `target_user`, `target_password`); inserts a `pending` row, launches the ansible-runner job async, returns the new run's detail panel |
+| `POST /runs` | Create a run (`roles[]`, `target_os`, `target_host`, `target_port`, `target_user`, `target_password`); inserts a `pending` row, launches the ansible-runner job async, returns the new run's detail panel |
 | `GET /runs/{job_id}` | Run detail fragment/page — status, target, roles, timestamps, log panel container |
 | `GET /runs/{job_id}/stream` | SSE endpoint — live log lines + status transitions for the job; closes when the run ends |
 | `GET /runs/{job_id}/log` | Full plain-text log — used for replaying a finished run, or backfilling before SSE attaches |
@@ -357,18 +378,24 @@ logging:
   level: INFO
 
 defaults:
-  linux:
+  ssh:
     username: ""
     password: ""
-  windows:
+  winrm:
+    username: ""
+    password: ""
+  psrp:
     username: ""
     password: ""
 ```
 
-`defaults.linux` / `defaults.windows` pre-fill the target form's username/password fields
-depending on which OS the user selects, purely as a convenience — they are never used directly
-without passing through the form, and the actual value submitted (default or edited) is the one
-held in memory for that run (see the password-persistence note above).
+`defaults.ssh` / `defaults.winrm` / `defaults.psrp` pre-fill the target form's username/password
+fields depending on which port preset the user picks (see "Backend & UI" above), purely as a
+convenience — they are never used directly without passing through the form, and the actual
+value submitted (default or edited) is the one held in memory for that run (see the
+password-persistence note above). Each is independent, with no fallback between them: WinRM and
+PSRP are both "Windows" but not necessarily the same account, so leaving `psrp` unset (say)
+just leaves that preset's fields blank rather than borrowing `winrm`'s values.
 
 Every key is overridable via an environment variable using the `ANSIBLASTER_` prefix with `__` as
 the nesting delimiter, e.g.:
@@ -377,7 +404,8 @@ the nesting delimiter, e.g.:
 - `ANSIBLASTER_ANSIBLE__ROLES_PATH=/srv/ansible/roles`
 - `ANSIBLASTER_ANSIBLE__PLAYBOOKS_PATH=/srv/ansible/playbooks`
 - `ANSIBLASTER_DATABASE__PATH=/data/ansiblaster.db`
-- `ANSIBLASTER_DEFAULTS__LINUX__PASSWORD=...` / `ANSIBLASTER_DEFAULTS__WINDOWS__PASSWORD=...`
+- `ANSIBLASTER_DEFAULTS__SSH__PASSWORD=...` / `ANSIBLASTER_DEFAULTS__WINRM__PASSWORD=...` /
+  `ANSIBLASTER_DEFAULTS__PSRP__PASSWORD=...`
 
 ## Project layout
 

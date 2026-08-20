@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from ansiblaster.inventory import HOST_ALIAS, build_inventory, default_port
+from ansiblaster.inventory import (
+    HOST_ALIAS,
+    WINDOWS_HTTPS_PORT,
+    build_inventory,
+    connection_label,
+    default_port,
+)
 from ansiblaster.models import TargetOS
 
 
@@ -14,6 +20,32 @@ def test_default_port_windows():
 
 def test_default_port_windows_psrp():
     assert default_port(TargetOS.WINDOWS_PSRP) == 5985
+
+
+def test_connection_label_ssh():
+    assert connection_label(TargetOS.LINUX, 22) == "SSH"
+
+
+def test_connection_label_ssh_on_a_custom_port_is_still_just_ssh():
+    # Linux/SSH has no "(Secure)" concept -- WINDOWS_HTTPS_PORT is only meaningful for the two
+    # Windows connection types.
+    assert connection_label(TargetOS.LINUX, WINDOWS_HTTPS_PORT) == "SSH"
+
+
+def test_connection_label_winrm():
+    assert connection_label(TargetOS.WINDOWS, 5985) == "WinRM"
+
+
+def test_connection_label_winrm_secure():
+    assert connection_label(TargetOS.WINDOWS, WINDOWS_HTTPS_PORT) == "WinRM (Secure)"
+
+
+def test_connection_label_psrp():
+    assert connection_label(TargetOS.WINDOWS_PSRP, 5985) == "PSRP"
+
+
+def test_connection_label_psrp_secure():
+    assert connection_label(TargetOS.WINDOWS_PSRP, WINDOWS_HTTPS_PORT) == "PSRP (Secure)"
 
 
 def test_build_inventory_uses_single_host_alias():

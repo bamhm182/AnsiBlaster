@@ -23,15 +23,10 @@
 
   <dl class="run-detail-meta">
     <dt>Target</dt>
-    <dd>{{ run.target_user }}@{{ run.target_host }}:{{ run.target_port }} ({{ run.target_os.value }})</dd>
+    <dd>{{ run.target_user }}@{{ run.target_host }}:{{ run.target_port }} ({{ run | connection_label }})</dd>
 
     <dt>Roles</dt>
     <dd>{{ run.roles | join(", ") }}</dd>
-
-    {% if run.playbooks %}
-      <dt>Playbooks</dt>
-      <dd>{{ run.playbooks | join(", ") }}</dd>
-    {% endif %}
 
     <dt>Status</dt>
     <dd class="status">{{ run.status.value }}</dd>

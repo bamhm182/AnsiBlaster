@@ -8,7 +8,7 @@ fresh container with no volume mounted) is not an error.
 Precedence, highest first: constructor kwargs (mainly useful in tests) > `ANSIBLASTER_*` env
 vars > the YAML file > the defaults declared on each model. Env vars use `ANSIBLASTER_` as a
 prefix and `__` to address nested keys, e.g. `ANSIBLASTER_SERVER__PORT`,
-`ANSIBLASTER_DEFAULTS__LINUX__PASSWORD`.
+`ANSIBLASTER_DEFAULTS__SSH__PASSWORD`.
 
 See CLAUDE.md's "Configuration file" section for the full key reference.
 """
@@ -51,15 +51,20 @@ class LoggingSettings(BaseModel):
 
 
 class TargetCredentials(BaseModel):
-    """Default username/password pre-filled into the apply form for one target OS."""
+    """Default username/password pre-filled into the apply form for one port preset."""
 
     username: str = ""
     password: str = ""
 
 
 class DefaultsSettings(BaseModel):
-    linux: TargetCredentials = Field(default_factory=TargetCredentials)
-    windows: TargetCredentials = Field(default_factory=TargetCredentials)
+    """One independent set of defaults per port preset -- winrm and psrp are both "Windows"
+    but are otherwise unrelated here (no fallback between them): if you only configure one,
+    the other's fields just start out blank, same as if neither were configured."""
+
+    ssh: TargetCredentials = Field(default_factory=TargetCredentials)
+    winrm: TargetCredentials = Field(default_factory=TargetCredentials)
+    psrp: TargetCredentials = Field(default_factory=TargetCredentials)
 
 
 def _resolve_config_path() -> Path | None:

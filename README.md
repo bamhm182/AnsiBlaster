@@ -130,19 +130,24 @@ logging:
   level: INFO
 
 defaults:
-  linux:
+  ssh:
     username: ""
     password: ""
-  windows:
+  winrm:
+    username: ""
+    password: ""
+  psrp:
     username: ""
     password: ""
 ```
 
-`defaults.linux`/`defaults.windows` just pre-fill the target form's username/password fields —
-convenience, not a stored credential (see the warning above: nothing you submit is persisted
-past the life of that run). Env var overrides follow the config file's nesting with `__`, e.g.
-`ANSIBLASTER_SERVER__PORT`, `ANSIBLASTER_ANSIBLE__ROLES_PATH`,
-`ANSIBLASTER_DEFAULTS__LINUX__PASSWORD`. Full reference in [`CLAUDE.md`](CLAUDE.md#configuration-file).
+`defaults.ssh`/`defaults.winrm`/`defaults.psrp` just pre-fill the target form's username/
+password fields for that connection preset — convenience, not a stored credential (see the
+warning above: nothing you submit is persisted past the life of that run); each is independent,
+so leaving one unset just leaves those fields blank rather than falling back to another. Env
+var overrides follow the config file's nesting with `__`, e.g. `ANSIBLASTER_SERVER__PORT`,
+`ANSIBLASTER_ANSIBLE__ROLES_PATH`,
+`ANSIBLASTER_DEFAULTS__SSH__PASSWORD`. Full reference in [`CLAUDE.md`](CLAUDE.md#configuration-file).
 
 ## Development
 

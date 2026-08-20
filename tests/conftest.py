@@ -10,7 +10,7 @@ from ansiblaster.settings import get_settings
 @pytest.fixture
 def make_client(tmp_path, monkeypatch):
     """Factory for a TestClient wired to an isolated roles/playbooks/artifacts/db under
-    tmp_path. Call with extra ANSIBLASTER_* env vars (e.g. make_client(ANSIBLASTER_DEFAULTS__LINUX__USERNAME="deploy"))
+    tmp_path. Call with extra ANSIBLASTER_* env vars (e.g. make_client(ANSIBLASTER_DEFAULTS__SSH__USERNAME="deploy"))
     to set them *before* the app's lifespan loads settings -- plain `client` below can't do
     that, since by the time a test body runs, its TestClient has already started.
 

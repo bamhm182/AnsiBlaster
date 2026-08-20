@@ -86,7 +86,9 @@
                 >
                   <option value="{{ default_ports['linux'] }}" data-os="linux" selected>SSH</option>
                   <option value="{{ default_ports['windows'] }}" data-os="windows">WinRM</option>
+                  <option value="{{ windows_https_port }}" data-os="windows">WinRM (Secure)</option>
                   <option value="{{ default_ports['windows_psrp'] }}" data-os="windows_psrp">PSRP</option>
+                  <option value="{{ windows_https_port }}" data-os="windows_psrp">PSRP (Secure)</option>
                 </select>
                 <input type="number" name="target_port" id="target-port-input"
                        value="{{ default_ports['linux'] }}" required>
@@ -98,12 +100,12 @@
             <label>
               Username
               <input type="text" name="target_user" id="target-user-input"
-                     value="{{ defaults.linux.username }}" required>
+                     value="{{ defaults.ssh.username }}" required>
             </label>
             <label>
               Password
               <input type="password" name="target_password" id="target-password-input"
-                     value="{{ defaults.linux.password }}">
+                     value="{{ defaults.ssh.password }}">
             </label>
           </div>
         </div>
@@ -194,21 +196,18 @@
   const OS_DEFAULTS = {
     linux: {
       port: {{ default_ports['linux'] }},
-      username: {{ defaults.linux.username | tojson_script }},
-      password: {{ defaults.linux.password | tojson_script }}
+      username: {{ defaults.ssh.username | tojson_script }},
+      password: {{ defaults.ssh.password | tojson_script }}
     },
     windows: {
       port: {{ default_ports['windows'] }},
-      username: {{ defaults.windows.username | tojson_script }},
-      password: {{ defaults.windows.password | tojson_script }}
+      username: {{ defaults.winrm.username | tojson_script }},
+      password: {{ defaults.winrm.password | tojson_script }}
     },
-    // Same Windows credentials as the WinRM preset above -- config.yaml has no separate psrp
-    // bucket, since PSRP just talks to the same target with a different Ansible connection
-    // plugin, not a different account.
     windows_psrp: {
       port: {{ default_ports['windows_psrp'] }},
-      username: {{ defaults.windows.username | tojson_script }},
-      password: {{ defaults.windows.password | tojson_script }}
+      username: {{ defaults.psrp.username | tojson_script }},
+      password: {{ defaults.psrp.password | tojson_script }}
     }
   };
 
@@ -221,20 +220,24 @@
   }
 
   // ---------------------------------------------------------------------
-  // Port preset dropdown: picking "SSH"/"WinRM"/"PSRP" is now how a run's OS+connection method
-  // gets chosen (there's no separate Linux/Windows field to keep in sync with it) -- each
-  // <option> carries both the port it implies (its value, which fills the adjacent port input)
-  // and the OS/connection it implies via data-os, which drives #target-os-select (hidden,
-  // still what actually gets submitted) and, through it, applyOsDefaults()'s
-  // port/username/password fill-in. Picking a preset re-runs the reachability check right
-  // away (rather than waiting for the port field to lose focus) since the port/protocol just
-  // changed out from under whatever was last checked.
+  // Port preset dropdown: picking "SSH"/"WinRM"/"WinRM (Secure)"/"PSRP"/"PSRP (Secure)" is now
+  // how a run's OS+connection method gets chosen (there's no separate Linux/Windows field to
+  // keep in sync with it) -- each <option> carries the OS/connection it implies via data-os,
+  // which drives #target-os-select (hidden, still what actually gets submitted) and, through
+  // it, applyOsDefaults()'s username/password fill-in. The port comes straight from the
+  // selected <option>'s own value rather than from OS_DEFAULTS (applied first, then
+  // overwritten here): WinRM and WinRM (Secure) share a data-os but need different ports
+  // (5985 vs 5986), so OS_DEFAULTS' one-port-per-os shape can't tell those two apart.
+  // Picking a preset re-runs the reachability check right away (rather than waiting for the
+  // port field to lose focus) since the port/protocol just changed out from under whatever was
+  // last checked.
   // ---------------------------------------------------------------------
   function applyPortPreset(select) {
     const os = select.selectedOptions[0]?.dataset.os || "linux";
     const osField = document.getElementById("target-os-select");
     osField.value = os;
     applyOsDefaults(osField);
+    document.getElementById("target-port-input").value = select.value;
     checkTargetPort();
   }
 
@@ -242,7 +245,7 @@
   // Status area (above the Apply button): a quick, service-agnostic reachability check --
   // "Status: <dot> <banner>", the same banner text `nc host port` would show for a protocol
   // like SSH that speaks first on connect (e.g. "SSH-2.0-OpenSSH_10.2") -- run whenever the
-  // Port field loses focus. See portcheck.py for why WinRM targets just show "open, no
+  // IP address *or* Port field loses focus. See portcheck.py for why WinRM targets just show "open, no
   // banner" instead: it's HTTP-driven and won't send anything unprompted, and this check never
   // sends anything itself. Plain fetch() rather than htmx: htmx's default parameter collection
   // would scrape every field in #apply-form (since host/port both live inside it), which would
@@ -284,6 +287,7 @@
   }
 
   document.getElementById("target-port-input").addEventListener("blur", checkTargetPort);
+  document.getElementById("target-host-input").addEventListener("blur", checkTargetPort);
 
   // ---------------------------------------------------------------------
   // Playbooks only ever *add* checks -- never a round trip to the server (see CLAUDE.md's
@@ -306,9 +310,19 @@
     return div.innerHTML;
   }
 
+  // Shared with role_list.html/playbook_list.html's eyeball buttons (see partials/
+  // eye_icon.html) -- embedded here too since this list is built client-side, not
+  // server-rendered, so it can't include the partial's markup into its own output directly.
+  const EYE_ICON_SVG = `{% include "partials/eye_icon.html" %}`;
+
   // The Deploy column's top section is a read-only reflection of whatever's checked in the
   // Roles column -- removal happens by unchecking the box there, not by interacting with this
-  // list directly.
+  // list directly. Its eyeball buttons are the one exception: viewing a role's files here
+  // works the same as in the Roles column (delegated click listener below), just without
+  // needing to go find that role over there first. Built via DOM methods rather than an HTML
+  // string (like escapeHtml() + template-literal concatenation elsewhere in this file) because
+  // a role name is going into both text content *and* a data-* attribute here -- escapeHtml()
+  // only makes text content safe, not attribute values (it doesn't escape quote characters).
   function syncSelectedRolesSummary() {
     const checked = Array.from(document.querySelectorAll('input[name="roles"]:checked'))
       .map((el) => el.value);
@@ -317,15 +331,36 @@
       container.innerHTML = '<p class="empty-hint">No roles selected.</p>';
       return;
     }
-    container.innerHTML =
-      '<ul class="selected-roles-list">' +
-      checked.map((role) => `<li>${escapeHtml(role)}</li>`).join("") +
-      "</ul>";
+    const list = document.createElement("ul");
+    list.className = "selected-roles-list";
+    checked.forEach((role) => {
+      const item = document.createElement("li");
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "selected-role-name";
+      nameSpan.textContent = role;
+      const eyeButton = document.createElement("button");
+      eyeButton.type = "button";
+      eyeButton.className = "icon-button eyeball-button";
+      eyeButton.dataset.role = role;
+      eyeButton.title = `View ${role} files`;
+      eyeButton.setAttribute("aria-label", `View ${role} files`);
+      eyeButton.innerHTML = EYE_ICON_SVG;
+      item.append(nameSpan, eyeButton);
+      list.appendChild(item);
+    });
+    container.replaceChildren(list);
   }
 
   // Delegated so it keeps working after GET /roles refreshes #role-list's contents.
   document.addEventListener("change", (evt) => {
     if (evt.target.matches('input[name="roles"]')) syncSelectedRolesSummary();
+  });
+
+  // Delegated since syncSelectedRolesSummary() replaces #selected-roles-summary's contents
+  // wholesale on every change.
+  document.getElementById("selected-roles-summary").addEventListener("click", (evt) => {
+    const button = evt.target.closest(".eyeball-button");
+    if (button) openViewer("role", button.dataset.role);
   });
 
   // ---------------------------------------------------------------------
@@ -597,26 +632,43 @@
     const detail = document.querySelector(`.run-detail[data-run-id="${runId}"]`);
     if (!detail) return;
 
+    // The run's actual password was never persisted (see CLAUDE.md's "runs table" note), so
+    // there's nothing to restore it to -- but if the Password field already has something
+    // *typed into it* (from an earlier manual edit, or from an OS/preset change), that's a
+    // more useful thing to keep than clobbering it with the configured default. Only fall back
+    // to the default when the field was already empty.
+    const passwordInput = document.getElementById("target-password-input");
+    const existingPassword = passwordInput.value;
+
     const osSelect = document.getElementById("target-os-select");
     osSelect.value = detail.dataset.targetOs;
-    // Fills port/username/password from that OS's configured defaults first -- port and
-    // username are then overwritten below with the run's actual values. The password is
-    // deliberately left at the default: the run's actual password was never persisted (see
-    // CLAUDE.md's "runs table" note), so the configured default is the closest available.
+    // Fills port/username/password from that OS's configured defaults first -- port, username,
+    // and (conditionally, see above) password are then overwritten below with the run's actual
+    // values or the preserved input.
     applyOsDefaults(osSelect);
+    if (existingPassword !== "") {
+      passwordInput.value = existingPassword;
+    }
 
     document.getElementById("target-host-input").value = detail.dataset.targetHost;
     document.getElementById("target-port-input").value = detail.dataset.targetPort;
     document.getElementById("target-user-input").value = detail.dataset.targetUser;
-    // Reflects the run's OS/connection in the preset dropdown too, matched by data-os rather
-    // than by port -- WinRM and PSRP share the same default port (5985), so matching on port
-    // alone would always land on whichever of the two comes first in the <select>. Either way,
-    // the hidden target-os-select above (not this dropdown) is what's actually authoritative
-    // and submitted, so this is purely a display nicety.
+    // Reflects the run's OS/connection in the preset dropdown too, matched by data-os *and*
+    // port first -- WinRM/PSRP each now have a plain and a "(Secure)" option sharing one
+    // data-os but different ports, so an os-only match can't tell those apart. Falls back to
+    // an os-only match (e.g. for a custom port that matches neither preset exactly) so it's
+    // still close, and to no selection at all if even that fails. Either way, the hidden
+    // target-os-select above (not this dropdown) is what's actually authoritative and
+    // submitted, so this is purely a display nicety.
     const portPreset = document.getElementById("target-port-preset");
-    portPreset.selectedIndex = Array.from(portPreset.options).findIndex(
-      (opt) => opt.dataset.os === detail.dataset.targetOs
+    const presetOptions = Array.from(portPreset.options);
+    let presetIndex = presetOptions.findIndex(
+      (opt) => opt.dataset.os === detail.dataset.targetOs && opt.value === detail.dataset.targetPort
     );
+    if (presetIndex === -1) {
+      presetIndex = presetOptions.findIndex((opt) => opt.dataset.os === detail.dataset.targetOs);
+    }
+    portPreset.selectedIndex = presetIndex;
     resetPortStatusDot();
 
     document.querySelectorAll('input[name="roles"]').forEach((checkbox) => {

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Request
 
 from ansiblaster.db import session_scope
 from ansiblaster.deps import get_app_settings, get_session_factory, templates
-from ansiblaster.inventory import DEFAULT_PORTS
+from ansiblaster.inventory import DEFAULT_PORTS, WINDOWS_HTTPS_PORT
 from ansiblaster.models import Run
 from ansiblaster.playbooks import discover_playbooks
 from ansiblaster.roles import discover_roles
@@ -37,6 +37,7 @@ async def index(
             "playbooks": discover_playbooks(settings.ansible.playbooks_path),
             "runs": recent_runs,
             "default_ports": {os_.value: port for os_, port in DEFAULT_PORTS.items()},
+            "windows_https_port": WINDOWS_HTTPS_PORT,
             "defaults": settings.defaults,
         },
     )

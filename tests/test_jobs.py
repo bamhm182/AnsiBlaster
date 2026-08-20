@@ -226,29 +226,6 @@ async def test_start_job_windows_psrp_playbook_has_no_become(tmp_path, monkeypat
     assert host_vars["ansible_connection"] == "psrp"
 
 
-async def test_start_job_records_playbooks_used(tmp_path, monkeypatch):
-    calls: list[dict] = []
-    monkeypatch.setattr(
-        "ansiblaster.jobs.ansible_runner.run_async", _fake_run_async_recorder(calls)
-    )
-    manager, session_factory = _make_job_manager(tmp_path)
-
-    run = manager.start_job(
-        target_os=TargetOS.LINUX,
-        target_host="192.168.1.10",
-        target_port=22,
-        target_user="root",
-        target_password="hunter2",
-        roles=["apache", "mysql", "php"],
-        playbooks=["lamp"],
-    )
-
-    with session_scope(session_factory) as session:
-        fetched = session.get(Run, run.id)
-        assert fetched.playbooks == ["lamp"]
-        assert fetched.roles == ["apache", "mysql", "php"]
-
-
 async def test_start_job_requires_at_least_one_role(tmp_path):
     manager, _ = _make_job_manager(tmp_path)
 

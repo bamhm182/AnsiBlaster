@@ -58,7 +58,10 @@ def test_create_run_success(client, tmp_path, monkeypatch):
     assert "successful" in response.text
 
 
-def test_create_run_records_playbooks_used(client, tmp_path, monkeypatch):
+def test_create_run_ignores_a_submitted_playbooks_field(client, tmp_path, monkeypatch):
+    """Playbooks aren't tracked on a run at all (see CLAUDE.md's "Playbooks (role presets)"
+    section) -- the current UI never submits playbooks[], but a stray/legacy one shouldn't
+    break anything if it somehow shows up."""
     make_role(tmp_path, "apache")
     make_role(tmp_path, "mysql")
     monkeypatch.setattr("ansiblaster.jobs.ansible_runner.run_async", _fake_run_async([]))
@@ -68,7 +71,26 @@ def test_create_run_records_playbooks_used(client, tmp_path, monkeypatch):
     assert response.status_code == 201
     run = _only_run(client)
     assert run.roles == ["apache", "mysql"]
-    assert run.playbooks == ["lamp"]
+    assert not hasattr(run, "playbooks")
+
+
+def test_create_run_shows_connection_label_not_raw_os(client, tmp_path, monkeypatch):
+    """The human-readable target line shows the connection preset (see
+    inventory.connection_label), not the raw target_os enum value -- data-target-os (used by
+    loadRunIntoDeploy()) still carries the raw value, deliberately, so this only checks for the
+    label's presence rather than the raw value's absence."""
+    make_role(tmp_path, "iis")
+    monkeypatch.setattr("ansiblaster.jobs.ansible_runner.run_async", _fake_run_async([]))
+
+    response = client.post(
+        "/runs",
+        data=_base_form(
+            target_os="windows_psrp", target_port="5986", roles=["iis"], target_user="Administrator"
+        ),
+    )
+
+    assert response.status_code == 201
+    assert "PSRP (Secure)" in response.text
 
 
 def test_create_run_requires_at_least_one_role(client, tmp_path, monkeypatch):

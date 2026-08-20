@@ -62,8 +62,10 @@ class Run(Base):
     target_port: Mapped[int] = mapped_column(Integer, nullable=False)
     target_user: Mapped[str] = mapped_column(String, nullable=False)
 
+    # Snapshot of the actual roles applied, regardless of whether they were checked
+    # individually or via a playbook preset -- playbooks themselves aren't tracked here, only
+    # what they expanded to (see CLAUDE.md's "Playbooks (role presets)" section).
     roles: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    playbooks: Mapped[list[str] | None] = mapped_column(JSON, nullable=True, default=list)
 
     status: Mapped[RunStatus] = mapped_column(
         Enum(RunStatus), nullable=False, default=RunStatus.PENDING

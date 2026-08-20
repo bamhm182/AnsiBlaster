@@ -31,7 +31,7 @@ def test_index_embeds_os_defaults_as_raw_js_not_html_escaped(make_client):
     OS-default-prefill and playbook-click-to-check interaction on the page). Caught by
     actually loading the rendered page in a browser and seeing `Unexpected token '&'`.
     """
-    with make_client(ANSIBLASTER_DEFAULTS__LINUX__USERNAME="deploy") as client:
+    with make_client(ANSIBLASTER_DEFAULTS__SSH__USERNAME="deploy") as client:
         response = client.get("/")
 
     assert response.status_code == 200

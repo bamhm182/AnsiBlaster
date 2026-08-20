@@ -33,10 +33,12 @@ def test_defaults_with_no_config_file_and_no_env_vars():
     assert settings.ansible.artifacts_path == "/opt/ansiblaster/artifacts"
     assert settings.database.path == "/opt/ansiblaster/ansiblaster.db"
     assert settings.logging.level == "INFO"
-    assert settings.defaults.linux.username == ""
-    assert settings.defaults.linux.password == ""
-    assert settings.defaults.windows.username == ""
-    assert settings.defaults.windows.password == ""
+    assert settings.defaults.ssh.username == ""
+    assert settings.defaults.ssh.password == ""
+    assert settings.defaults.winrm.username == ""
+    assert settings.defaults.winrm.password == ""
+    assert settings.defaults.psrp.username == ""
+    assert settings.defaults.psrp.password == ""
 
 
 def test_yaml_config_file_is_loaded(tmp_path, monkeypatch):
@@ -48,7 +50,7 @@ def test_yaml_config_file_is_loaded(tmp_path, monkeypatch):
         ansible:
           roles_path: /srv/ansible/roles
         defaults:
-          linux:
+          ssh:
             username: deploy
         """
     )
@@ -58,7 +60,7 @@ def test_yaml_config_file_is_loaded(tmp_path, monkeypatch):
 
     assert settings.server.port == 9000
     assert settings.ansible.roles_path == "/srv/ansible/roles"
-    assert settings.defaults.linux.username == "deploy"
+    assert settings.defaults.ssh.username == "deploy"
     # Unset keys still fall back to their defaults.
     assert settings.server.host == "0.0.0.0"
     assert settings.ansible.playbooks_path == "/opt/ansible/playbooks"
@@ -83,15 +85,17 @@ def test_env_var_overrides_yaml(tmp_path, monkeypatch):
 
 
 def test_nested_defaults_credentials_via_env_var(monkeypatch):
-    monkeypatch.setenv("ANSIBLASTER_DEFAULTS__WINDOWS__USERNAME", "Administrator")
-    monkeypatch.setenv("ANSIBLASTER_DEFAULTS__WINDOWS__PASSWORD", "hunter2")
+    monkeypatch.setenv("ANSIBLASTER_DEFAULTS__WINRM__USERNAME", "Administrator")
+    monkeypatch.setenv("ANSIBLASTER_DEFAULTS__WINRM__PASSWORD", "hunter2")
 
     settings = load_settings()
 
-    assert settings.defaults.windows.username == "Administrator"
-    assert settings.defaults.windows.password == "hunter2"
-    # Untouched section stays default.
-    assert settings.defaults.linux.username == ""
+    assert settings.defaults.winrm.username == "Administrator"
+    assert settings.defaults.winrm.password == "hunter2"
+    # Untouched sections stay default -- no fallback between ssh/winrm/psrp.
+    assert settings.defaults.ssh.username == ""
+    assert settings.defaults.psrp.username == ""
+    assert settings.defaults.psrp.password == ""
 
 
 def test_get_settings_is_cached_singleton():

@@ -77,7 +77,6 @@ class JobManager:
         target_user: str,
         target_password: str,
         roles: list[str],
-        playbooks: list[str] | None = None,
     ) -> Run:
         """Create the Run row and launch its ansible-runner job. Returns the new Run.
 
@@ -97,7 +96,6 @@ class JobManager:
                 target_port=target_port,
                 target_user=target_user,
                 roles=list(roles),
-                playbooks=list(playbooks or []),
             )
             session.add(run)
             session.flush()
