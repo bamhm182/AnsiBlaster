@@ -208,10 +208,17 @@ main {
   margin: 0;
 }
 
+/* Both roles and playbooks: .list-item is always the outer row (holding the row-level
+   padding/hover/highlight), with the actual clickable "apply/select" control (.role-label or
+   .playbook-button) and the eyeball view button as its children -- see role_list.html /
+   playbook_list.html. Neither role_list.html's <label> nor playbook_list.html's row can be a
+   <button> themselves: the eyeball is a real <button> next to them, and a button can't nest
+   inside another button or (reliably, without extra JS) inside a label without also toggling
+   its checkbox. */
 .list-item {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.35rem;
   padding: 0.35rem 0.75rem;
   cursor: pointer;
   border-left: 2px solid transparent;
@@ -219,35 +226,49 @@ main {
 .list-item:hover {
   background: var(--selection);
 }
-.list-item input[type="checkbox"] {
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-.list-item .list-item-name {
+.list-item-name {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.list-item .list-item-arrow {
+.list-item-arrow {
   color: var(--fg-muted);
   flex: 0 0 auto;
 }
 .list-item:hover .list-item-arrow {
   color: var(--accent);
 }
-/* Fuzzy-filter hides by [data-filter-name] element, which is the .list-item itself for
-   roles (a <label>) but its wrapping .playbook-item <div> for playbooks (since a <button>
-   can't validly contain the <input> that lives alongside it) -- so this targets the
-   attribute, not the .list-item class, to cover both. */
+/* Fuzzy-filter hides by [data-filter-name], which is always the outer .list-item row now. */
 [data-filter-name].is-hidden {
   display: none;
 }
 
-.playbook-item .list-item {
-  width: 100%;
+.role-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+.role-label input[type="checkbox"] {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.playbook-button {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
   background: none;
   border: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
   text-align: left;
 }
 
@@ -566,6 +587,64 @@ body.is-resizing {
 }
 .bottom-tab-content[hidden] {
   display: none;
+}
+
+/* Viewer tab: a file browser (left) + read-only file content (right), opened via the eyeball
+   button next to a role/playbook (see index.html's openViewer()). */
+.viewer-layout {
+  flex-direction: row;
+  overflow: hidden;
+}
+.viewer-file-list {
+  flex: 0 0 15rem;
+  overflow-y: auto;
+  border-right: 1px solid var(--bg-inset);
+  padding: 0.25rem 0;
+}
+.viewer-file-content {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 0.6rem 0.85rem;
+}
+.viewer-file-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.viewer-file-button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0.3rem 0.75rem;
+}
+.viewer-file-button:hover {
+  background: var(--selection);
+}
+.viewer-file-header {
+  font-weight: 600;
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+  margin-bottom: 0.5rem;
+  word-break: break-all;
+}
+.viewer-file-body {
+  background: var(--bg);
+  border: 1px solid var(--bg-inset);
+  border-radius: 4px;
+  padding: 0.6rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
 }
 
 /* Run tabs (one per concurrent run) inside the Log tab */

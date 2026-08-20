@@ -111,6 +111,13 @@
 
         <div class="target-status" id="target-status">
           <span class="target-status-label">Status:</span>
+          <button
+            type="button"
+            class="icon-button"
+            onclick="checkTargetPort()"
+            title="Re-check port reachability"
+            aria-label="Re-check port reachability"
+          >&#8635;</button>
           <span id="port-status-dot" class="port-status-dot" aria-hidden="true"></span>
           <span id="port-status-text" class="port-status-text">Not checked yet.</span>
         </div>
@@ -133,6 +140,7 @@
       <div class="bottom-tabs">
         <button type="button" class="bottom-tab active" data-bottom-tab="log">Log</button>
         <button type="button" class="bottom-tab" data-bottom-tab="history">History</button>
+        <button type="button" class="bottom-tab" data-bottom-tab="viewer">Viewer</button>
       </div>
       <button
         type="button"
@@ -159,6 +167,16 @@
         <button type="button" hx-get="/runs" hx-target="#run-list" hx-swap="innerHTML">
           Refresh history
         </button>
+      </div>
+      <div class="bottom-tab-content viewer-layout" data-bottom-content="viewer" hidden>
+        <div class="viewer-file-list" id="viewer-file-list">
+          <p class="empty-hint">
+            Click the &#128065; next to a role or playbook to browse its files here.
+          </p>
+        </div>
+        <div class="viewer-file-content" id="viewer-file-content">
+          <p class="empty-hint">Select a file on the left to view its contents.</p>
+        </div>
       </div>
     </div>
   </section>
@@ -356,6 +374,22 @@
     const collapsed = panel.classList.toggle("collapsed");
     evt.currentTarget.setAttribute("aria-expanded", String(!collapsed));
   });
+
+  // ---------------------------------------------------------------------
+  // Viewer tab: read-only file browser, opened via the eyeball button next to a role or
+  // playbook (see role_list.html / playbook_list.html). kind is "role" or "playbook" --
+  // GET /{kind}s/{name}/files (partials/file_browser.html) lists that item's files, and
+  // clicking one of them is plain hx-get on that fragment's own buttons straight into
+  // #viewer-file-content, so nothing else here needs to know about individual files.
+  // htmx.ajax() rather than a synthetic hx-get element: this is triggered from a plain
+  // onclick handler on a button that isn't itself the one making the request.
+  // ---------------------------------------------------------------------
+  function openViewer(kind, name) {
+    switchBottomTab("viewer");
+    document.getElementById("viewer-file-content").innerHTML =
+      '<p class="empty-hint">Select a file on the left to view its contents.</p>';
+    htmx.ajax("GET", `/${kind}s/${encodeURIComponent(name)}/files`, "#viewer-file-list");
+  }
 
   // ---------------------------------------------------------------------
   // Live log streaming + completion detection: a plain EventSource per active run, managed

@@ -1,0 +1,6 @@
+{# Jinja's default autoescaping HTML-entity-escapes {{ content }} below, which is exactly what
+   read-only display of arbitrary file contents inside a <pre> needs -- a role's template/vars
+   file could itself contain "<", ">", "&", or even literal HTML/script-looking text, and this
+   must never be interpreted as markup. #}
+<div class="viewer-file-header">{{ path }}</div>
+<pre class="viewer-file-body">{{ content }}</pre>

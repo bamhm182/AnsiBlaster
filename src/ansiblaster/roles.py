@@ -13,7 +13,9 @@ from pathlib import Path
 _TASKS_ENTRYPOINTS = ("tasks/main.yml", "tasks/main.yaml")
 
 
-def _looks_like_a_role(role_dir: Path) -> bool:
+def looks_like_a_role(role_dir: Path) -> bool:
+    """Public (not just used by discover_roles below) -- browse.py's Viewer-tab file listing
+    re-checks this for a requested role name too, rather than trusting it off the URL."""
     return any((role_dir / entrypoint).is_file() for entrypoint in _TASKS_ENTRYPOINTS)
 
 
@@ -31,5 +33,5 @@ def discover_roles(roles_path: str | Path) -> list[str]:
     return sorted(
         entry.name
         for entry in base.iterdir()
-        if entry.is_dir() and not entry.name.startswith(".") and _looks_like_a_role(entry)
+        if entry.is_dir() and not entry.name.startswith(".") and looks_like_a_role(entry)
     )

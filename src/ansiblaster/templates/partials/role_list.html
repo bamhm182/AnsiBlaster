@@ -1,9 +1,18 @@
 {% if roles %}
   {% for role in roles %}
-    <label class="list-item role-item" data-filter-name="{{ role }}">
-      <input type="checkbox" name="roles" value="{{ role }}" id="role-{{ role }}" form="apply-form">
-      <span class="list-item-name">{{ role }}</span>
-    </label>
+    <div class="list-item role-item" data-filter-name="{{ role }}">
+      <label class="role-label">
+        <input type="checkbox" name="roles" value="{{ role }}" id="role-{{ role }}" form="apply-form">
+        <span class="list-item-name">{{ role }}</span>
+      </label>
+      <button
+        type="button"
+        class="icon-button"
+        title="View {{ role }} files"
+        aria-label="View {{ role }} files"
+        onclick="openViewer('role', '{{ role }}')"
+      >&#128065;</button>
+    </div>
   {% endfor %}
 {% else %}
   <p class="empty-hint">No roles found.</p>

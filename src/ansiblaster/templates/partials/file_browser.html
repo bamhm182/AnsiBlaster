@@ -1,0 +1,17 @@
+{% if files %}
+  <ul class="viewer-file-tree">
+    {% for relpath in files %}
+      <li>
+        <button
+          type="button"
+          class="viewer-file-button"
+          hx-get="{{ base_url }}/file?path={{ relpath | urlencode }}"
+          hx-target="#viewer-file-content"
+          hx-swap="innerHTML"
+        >{{ relpath }}</button>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p class="empty-hint">No files found.</p>
+{% endif %}

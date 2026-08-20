@@ -81,14 +81,35 @@ logs) is persisted so past runs can be reviewed later.
   deliberately never does (keeping the same passive connect-and-listen behavior for every
   target rather than branching per protocol is what makes it "service-agnostic"). That call is
   plain `fetch()` rather than htmx so the request's query string can't end up including the
-  password field's value the way htmx's default form-scraping would.
-- Below the three columns, a full-width collapsible panel has two tabs: **Log** (one sub-tab
-  per concurrent run, opened by submitting the form or clicking a run in History) and
-  **History** (`GET /runs`, restyled but otherwise unchanged). Role/playbook checkboxes live in
-  their own columns, outside `<form id="apply-form">` (which now wraps only the Deploy column,
-  since that's where the Apply button lives) — they're associated to that form via the HTML5
-  `form="apply-form"` attribute rather than DOM nesting, which is what both `FormData(form)` and
-  native form submission need to pick them up.
+  password field's value the way htmx's default form-scraping would. A small refresh
+  (`.icon-button`, the same one used elsewhere) sits to the left of the dot to re-run the check
+  on demand, calling the same `checkTargetPort()`.
+- Below the three columns, a full-width collapsible panel has three tabs: **Log** (one sub-tab
+  per concurrent run, opened by submitting the form or clicking a run in History), **History**
+  (`GET /runs`, restyled but otherwise unchanged), and **Viewer** (a read-only file browser, see
+  below). Role/playbook checkboxes live in their own columns, outside `<form id="apply-form">`
+  (which now wraps only the Deploy column, since that's where the Apply button lives) — they're
+  associated to that form via the HTML5 `form="apply-form"` attribute rather than DOM nesting,
+  which is what both `FormData(form)` and native form submission need to pick them up.
+- **Viewer tab**: every role and playbook row in the Playbooks/Roles columns has an eyeball
+  button (👁, `.icon-button` again) right after its name — clicking it switches the bottom panel
+  to the Viewer tab and loads that item's files into a two-pane read-only browser
+  (`.viewer-file-list` + `.viewer-file-content`), via `openViewer(kind, name)` in `index.html`
+  calling `GET /{roles|playbooks}/{name}/files` (`partials/file_browser.html`) and, per file
+  clicked, `GET /{roles|playbooks}/{name}/file?path=...` (`partials/file_content.html`) — both
+  plain `hx-get`s on the file browser's own buttons, no extra JS needed for that part.
+  `browse.py` backs both: a role's "files" are every regular file under its directory
+  (`rglob("*")`, relative paths); a playbook's is always exactly one entry, its own filename, so
+  the same two-step "browse, then click a file" UI works for both without special-casing either.
+  Every lookup re-validates the role/playbook name against the same rules `roles.py`/
+  `playbooks.py` use for discovery, and every resolved path (the name itself, and any requested
+  file path within a role) is checked to still be inside its expected base directory once
+  resolved — defense against a `../`-laden name or path, or a symlink, trying to read something
+  outside `roles_path`/`playbooks_path`. Neither the eyeball button nor the row it sits in could
+  just be `<button>`-in-`<button>` (roles' would also need to sit inside the checkbox's `<label>`,
+  which would otherwise toggle the checkbox too) — see `role_list.html`/`playbook_list.html`'s
+  comments; playbook rows use the same "outer `<div>`, two sibling `<button>`s" shape as the run
+  tabs described below.
 
 ### Playbooks (role presets)
 
@@ -273,7 +294,11 @@ foreign key to some playbook table (playbooks aren't DB entities either — they
 |---|---|
 | `GET /` | Main page: role checklist, apply form, recent run history |
 | `GET /roles` | HTMX fragment — rescans the roles directory, re-renders the checklist |
+| `GET /roles/{name}/files` | HTMX fragment — Viewer tab file list for one role (`partials/file_browser.html`) |
+| `GET /roles/{name}/file` | HTMX fragment — one file's read-only content (`path` query param, `partials/file_content.html`) |
 | `GET /playbooks` | HTMX fragment — rescans the playbooks directory, re-renders the playbook button list (each button's roles baked in as a data attribute for the client-side check script) |
+| `GET /playbooks/{name}/files` | HTMX fragment — Viewer tab file list for one playbook (always one entry, its own file) |
+| `GET /playbooks/{name}/file` | HTMX fragment — that file's read-only content (`path` query param) |
 | `GET /runs` | HTMX fragment/page — run history list |
 | `POST /runs` | Create a run (`roles[]`, `playbooks[]` (informational, may be empty), `target_os`, `target_host`, `target_port`, `target_user`, `target_password`); inserts a `pending` row, launches the ansible-runner job async, returns the new run's detail panel |
 | `GET /runs/{job_id}` | Run detail fragment/page — status, target, roles, timestamps, log panel container |
@@ -361,13 +386,18 @@ src/ansiblaster/
 │                       # best-effort read of whatever banner the target volunteers unprompted
 │                       # (works for SSH, naturally yields none for WinRM) backing the Deploy
 │                       # column's Status row
+├── browse.py           # Viewer tab: list_role_files/read_role_file, list_playbook_files/
+│                       # read_playbook_file -- re-validates the role/playbook name and checks
+│                       # every resolved path stays inside its expected base directory
 ├── routes/
 │   ├── __init__.py     # aggregates routers for app.py to include
 │   ├── pages.py        # GET /
-│   ├── roles.py        # GET /roles fragment (distinct module from top-level roles.py —
-│   │                   # that one discovers roles, this one serves the HTTP fragment)
+│   ├── roles.py        # GET /roles fragment (distinct module from top-level roles.py --
+│   │                   # that one discovers roles, this one serves the HTTP fragment), plus
+│   │                   # the Viewer tab's GET /roles/{name}/files and .../file
 │   ├── playbooks.py    # GET /playbooks fragment (distinct from top-level playbooks.py, same
-│   │                   # naming pattern as roles.py above)
+│   │                   # naming pattern as roles.py above), plus the Viewer tab's
+│   │                   # GET /playbooks/{name}/files and .../file
 │   ├── runs.py         # POST /runs, GET /runs, GET /runs/{job_id}, GET /runs/{job_id}/stream,
 │   │                   # GET /runs/{job_id}/log, POST /runs/{job_id}/cancel
 │   └── target.py       # GET /target/check-port -- thin JSON wrapper around portcheck.py
@@ -379,6 +409,8 @@ src/ansiblaster/
 │       ├── role_list.html
 │       ├── playbook_list.html  # playbook buttons, each with its roles baked in as a data
 │       │                       # attribute for the client-side check script
+│       ├── file_browser.html   # Viewer tab: one role's/playbook's file list
+│       ├── file_content.html   # Viewer tab: one file's read-only content
 │       ├── run_list.html
 │       ├── run_row.html     # single history-list item; opened via a delegated fetch(),
 │       │                   # not hx-get (see "Backend & UI")
@@ -390,7 +422,7 @@ src/ansiblaster/
 
 - `tests/` mirrors this layout alongside `src/` (not inside the package): `test_roles.py`,
   `test_playbooks.py`, `test_inventory.py`, `test_jobs.py`, `test_portcheck.py`,
-  `test_routes_pages.py`, `test_routes_roles.py`, `test_routes_playbooks.py`,
+  `test_browse.py`, `test_routes_pages.py`, `test_routes_roles.py`, `test_routes_playbooks.py`,
   `test_routes_runs.py`, `test_routes_target.py`, plus a shared
   `conftest.py` (the `client` fixture — a `TestClient` wired to per-test tmp_path
   roles/playbooks/artifacts/DB paths — and `make_role`/`make_playbook` helpers).

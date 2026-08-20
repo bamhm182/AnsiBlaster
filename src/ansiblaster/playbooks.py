@@ -14,7 +14,7 @@ from typing import Any
 
 import yaml
 
-_PLAYBOOK_EXTENSIONS = (".yml", ".yaml")
+PLAYBOOK_EXTENSIONS = (".yml", ".yaml")
 
 
 def _role_name_from_entry(entry: Any) -> str | None:
@@ -65,7 +65,7 @@ def discover_playbooks(playbooks_path: str | Path) -> dict[str, list[str]]:
         if (
             not entry.is_file()
             or entry.name.startswith(".")
-            or entry.suffix.lower() not in _PLAYBOOK_EXTENSIONS
+            or entry.suffix.lower() not in PLAYBOOK_EXTENSIONS
         ):
             continue
 
