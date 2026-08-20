@@ -26,8 +26,8 @@ A small web UI for running Ansible roles against a single target host on demand:
    defaults but remain editable before submitting. A status dot next to the port field shows a
    quick reachability check once the field loses focus.
 4. Clicking "Apply" launches an Ansible run (via `ansible-runner`) that applies the selected
-   roles to that single target host, authenticating over SSH (Linux, via `sshpass`) or WinRM
-   (Windows), depending on the chosen OS.
+   roles to that single target host, authenticating over SSH (Linux, via `sshpass`), WinRM, or
+   PSRP (the latter two both Windows), depending on the chosen preset.
 5. The user watches a live log of the run in the browser.
 
 Runs are tracked as jobs; multiple runs can execute concurrently, and run history (metadata +
@@ -62,23 +62,29 @@ logs) is persisted so past runs can be reviewed later.
   role-list refresh) — unchecking happens back in the Roles column, not in this summary. The
   Apply button is pinned outside the column's scrollable areas, `flex: 0 0 auto` after two
   `flex: 1` scrolling sections (selected-roles summary, then the target form). There is no
-  visible Linux/Windows picker in the target form: a small "SSH"/"WinRM" `<select>` is merged
-  with the port number input into one bordered control (`.port-field-group` in `style.css` —
-  the select and input themselves are borderless/transparent so only the group's shared border
-  shows, making them read as one field rather than two) — picking a preset fills the port
-  input (22/5985, still freely editable afterward for a non-standard port) and writes the OS it
-  implies into a hidden `target_os` input (`applyPortPreset()` in `index.html`). That hidden
-  field is the only thing actually submitted for OS, so `POST /runs` and everything downstream
-  of it (inventory building, `become`, etc.) are unchanged by any of this. A dedicated Status
-  row ("Status: ⬤ <text>") sits just above the Apply button, outside the scrollable target
-  form like the button itself, and shows a quick reachability check
+  visible Linux/Windows picker in the target form: a small "SSH"/"WinRM"/"PSRP" `<select>` is
+  merged with the port number input into one bordered control (`.port-field-group` in
+  `style.css` — the select and input themselves are borderless/transparent so only the group's
+  shared border shows, making them read as one field rather than two) — picking a preset fills
+  the port input (22/5985/5985, still freely editable afterward for a non-standard port) and
+  writes the OS+connection it implies into a hidden `target_os` input (`applyPortPreset()` in
+  `index.html`). That hidden field is the only thing actually submitted for OS, so `POST /runs`
+  and everything downstream of it (inventory building, `become`, etc.) are unchanged by any of
+  this. WinRM and PSRP are two different Ansible connection plugins/Python libraries
+  (`pywinrm`/`pypsrp`) that both talk to the same Windows WinRM listener, so they get their own
+  `TargetOS` members (`WINDOWS`/`WINDOWS_PSRP`) but share a default port and are otherwise
+  treated identically everywhere except `inventory.py` (see "Ansible execution" below). A
+  dedicated Status row ("Status: ⬤ <text>") sits just above the Apply button, outside the
+  scrollable target form like the button itself, and shows a quick reachability check
   (`checkTargetPort()`/`resetPortStatusDot()` in `index.html`, calling `GET /target/check-port`
-  — see `portcheck.py`) run whenever the port field loses focus: the text is whatever banner
-  the target volunteers unprompted (e.g. `SSH-2.0-OpenSSH_10.2`, the same thing `nc host port`
-  would show), since a protocol like SSH sends that the instant a connection opens. WinRM
-  targets just show "open, no banner" — WinRM is HTTP/SOAP underneath, and HTTP is
-  request-driven, so nothing arrives until the client sends a request first, which this check
-  deliberately never does (keeping the same passive connect-and-listen behavior for every
+  — see `portcheck.py`) run whenever the port field loses focus *or* a port preset is picked
+  (`applyPortPreset()` calls `checkTargetPort()` directly rather than just resetting the dot,
+  since the port/protocol just changed out from under whatever was last checked): the text is
+  whatever banner the target volunteers unprompted (e.g. `SSH-2.0-OpenSSH_10.2`, the same thing
+  `nc host port` would show), since a protocol like SSH sends that the instant a connection
+  opens. WinRM/PSRP targets just show "open, no banner" — both are HTTP/SOAP underneath, and
+  HTTP is request-driven, so nothing arrives until the client sends a request first, which this
+  check deliberately never does (keeping the same passive connect-and-listen behavior for every
   target rather than branching per protocol is what makes it "service-agnostic"). That call is
   plain `fetch()` rather than htmx so the request's query string can't end up including the
   password field's value the way htmx's default form-scraping would. A small refresh
@@ -92,8 +98,14 @@ logs) is persisted so past runs can be reviewed later.
   associated to that form via the HTML5 `form="apply-form"` attribute rather than DOM nesting,
   which is what both `FormData(form)` and native form submission need to pick them up.
 - **Viewer tab**: every role and playbook row in the Playbooks/Roles columns has an eyeball
-  button (👁, `.icon-button` again) right after its name — clicking it switches the bottom panel
-  to the Viewer tab and loads that item's files into a two-pane read-only browser
+  button (`.icon-button.eyeball-button`, an inline SVG rather than an emoji character — a
+  colored emoji glyph would clash with the otherwise monochrome Dracula icon set, and rendering
+  is font/platform-dependent in a way a `stroke="currentColor"` SVG isn't; the path is shared
+  via `partials/eye_icon.html` rather than duplicated in both list partials) right after its
+  name. It's invisible (`visibility: hidden`, not `display: none`, so it doesn't shift the
+  row's layout when it appears) until its row is hovered or it has keyboard focus — clicking it
+  switches the bottom panel to the Viewer tab and loads that item's files into a two-pane
+  read-only browser
   (`.viewer-file-list` + `.viewer-file-content`), via `openViewer(kind, name)` in `index.html`
   calling `GET /{roles|playbooks}/{name}/files` (`partials/file_browser.html`) and, per file
   clicked, `GET /{roles|playbooks}/{name}/file?path=...` (`partials/file_content.html`) — both
@@ -138,29 +150,33 @@ logs) is persisted so past runs can be reviewed later.
 - Each job builds a **dynamic, single-host inventory** in memory (or in the run's
   `private_data_dir`) from the submitted OS/IP/port/username/password — there is no static
   inventory file to maintain.
-- **Authentication is OS-dependent**, chosen per run by the target's OS field, and always
-  password-based (no SSH keys or WinRM certs):
+- **Authentication is OS/connection-dependent**, chosen per run by the target's `TargetOS`
+  value (`linux` / `windows` / `windows_psrp`), and always password-based (no SSH keys or
+  WinRM/PSRP certs):
   - **Linux** targets use the standard `ssh` connection plugin together with **`sshpass`**,
     which feeds the password non-interactively. `sshpass` must be present wherever a run
     actually executes (dev environment and container image both need it installed as a system
     package, not a Python dependency).
-  - **Windows** targets use the `winrm` connection plugin (via the **`pywinrm`** Python package,
-    which does need to be a declared dependency, unlike `sshpass`), which accepts the password
-    directly — no extra system package required for this path.
-  - `inventory.py` is responsible for branching on the target's OS and setting the right
-    `ansible_connection`/`ansible_port`/auth variables for the host it generates.
-  - Both branches deliberately skip trust verification that would otherwise block a genuinely
-    new target: Linux sets `StrictHostKeyChecking=no`/`UserKnownHostsFile=/dev/null` (no
-    known_hosts entry required), and Windows ignores WinRM cert validation and uses the
-    `ntlm` transport (works over plain HTTP without extra server-side trust config). This
-    matches the app's ad hoc "type an IP and go" workflow, at the cost of not verifying a
-    target's identity on first contact.
+  - **Windows** targets use either the `winrm` connection plugin (via the **`pywinrm`** Python
+    package) or the `psrp` connection plugin (via the **`pypsrp`** Python package) — both
+    declared dependencies, unlike `sshpass`, and both talk HTTP/SOAP to the same WinRM listener
+    on the target, just via different client libraries/Ansible connection plugins. Either way
+    the password is accepted directly — no extra system package required for this path.
+  - `inventory.py` is responsible for branching on the target's OS/connection and setting the
+    right `ansible_connection`/`ansible_port`/auth variables for the host it generates.
+  - All three branches deliberately skip trust verification that would otherwise block a
+    genuinely new target: Linux sets `StrictHostKeyChecking=no`/`UserKnownHostsFile=/dev/null`
+    (no known_hosts entry required), and both Windows connection types ignore the WinRM/PSRP
+    cert validation and use the `ntlm` auth/transport (works over plain HTTP without extra
+    server-side trust config). This matches the app's ad hoc "type an IP and go" workflow, at
+    the cost of not verifying a target's identity on first contact.
 - The generated playbook runs with **`become: true` on Linux targets only** (installing things
   like `docker-host`/`apache` needs root). Since the app only ever collects one password,
   `ansible_become_password` is deliberately set to the same value as the login password
   (harmless no-op if `target_user` is already root) rather than prompting for a second one.
-  Windows targets skip `become` entirely — they're expected to connect as an already-admin
-  account, and Ansible's sudo-based become doesn't apply to WinRM anyway.
+  Windows targets (either connection type) skip `become` entirely — they're expected to
+  connect as an already-admin account, and Ansible's sudo-based become doesn't apply to
+  WinRM/PSRP anyway.
 
 ### Concurrency & job tracking
 
@@ -263,9 +279,9 @@ logs) is persisted so past runs can be reviewed later.
 | Column | Type | Notes |
 |---|---|---|
 | `id` | `String` (UUID), PK | Also used as the `ansible-runner` `ident` / `private_data_dir` name |
-| `target_os` | `String`/enum, not null | `linux` or `windows` — determines the connection method used |
+| `target_os` | `String`/enum, not null | `linux`, `windows`, or `windows_psrp` — determines the connection method used |
 | `target_host` | `String`, not null | IP address entered by the user |
-| `target_port` | `Integer`, not null | Default `22` for `linux`, `5985` for `windows` (chosen by the form/route, not the DB) |
+| `target_port` | `Integer`, not null | Default `22` for `linux`, `5985` for `windows`/`windows_psrp` (chosen by the form/route, not the DB) |
 | `target_user` | `String`, not null | |
 | `roles` | `JSON` (list[str]), not null | Snapshot of selected role names at submit time (regardless of whether they came from a playbook, manual picks, or both) |
 | `playbooks` | `JSON` (list[str]), nullable | Name(s) of any playbook(s) used to seed the selection (empty/null if the run was built purely from ad hoc role picks). Purely informational — `roles` above is still the source of truth for what actually ran |
@@ -464,8 +480,8 @@ independent without extra process-management code.
   `python:3.11-slim` with only `/app/.venv` copied in — no `uv`, no build tools. Runtime system
   packages: `sshpass` + `openssh-client` (Ansible's `ssh` connection plugin needs both to
   authenticate to Linux targets with a password) and `gosu` (privilege drop, see below).
-  `ansible-core`/`ansible-runner`/`pywinrm` are just Python deps already in `pyproject.toml`,
-  installed into the venv like everything else.
+  `ansible-core`/`ansible-runner`/`pywinrm`/`pypsrp` are just Python deps already in
+  `pyproject.toml`, installed into the venv like everything else.
 - **Container user**: non-root by default (`ansiblaster`, baseline uid/gid 1000), but the
   container starts as root and **`docker-entrypoint.sh`** remaps that user to `PUID`/`PGID` env
   vars (default `1000`/`1000`, a no-op at those values) before dropping privileges via `gosu`

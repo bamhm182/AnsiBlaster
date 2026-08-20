@@ -163,6 +163,9 @@ main {
 }
 
 .icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: none;
   color: var(--fg-muted);
@@ -242,6 +245,17 @@ main {
 /* Fuzzy-filter hides by [data-filter-name], which is always the outer .list-item row now. */
 [data-filter-name].is-hidden {
   display: none;
+}
+
+/* Eyeball view button: invisible until its row is hovered (or it has keyboard focus, so it's
+   still reachable without a mouse) -- visibility rather than display so the row's layout/width
+   doesn't shift when it appears. */
+.eyeball-button {
+  visibility: hidden;
+}
+.list-item:hover .eyeball-button,
+.eyeball-button:focus-visible {
+  visibility: visible;
 }
 
 .role-label {

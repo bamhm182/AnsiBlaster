@@ -203,6 +203,29 @@ async def test_start_job_windows_playbook_has_no_become(tmp_path, monkeypatch):
     assert "become" not in play
 
 
+async def test_start_job_windows_psrp_playbook_has_no_become(tmp_path, monkeypatch):
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        "ansiblaster.jobs.ansible_runner.run_async", _fake_run_async_recorder(calls)
+    )
+    manager, _ = _make_job_manager(tmp_path)
+
+    manager.start_job(
+        target_os=TargetOS.WINDOWS_PSRP,
+        target_host="10.0.0.5",
+        target_port=5985,
+        target_user="Administrator",
+        target_password="hunter2",
+        roles=["iis"],
+    )
+
+    [play] = calls[0]["playbook"]
+    assert "become" not in play
+
+    host_vars = calls[0]["inventory"]["all"]["hosts"]["target"]
+    assert host_vars["ansible_connection"] == "psrp"
+
+
 async def test_start_job_records_playbooks_used(tmp_path, monkeypatch):
     calls: list[dict] = []
     monkeypatch.setattr(

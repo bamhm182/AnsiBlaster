@@ -221,8 +221,9 @@ def _build_playbook(roles: list[str], target_os: TargetOS) -> list[dict[str, Any
     """The ephemeral playbook applying the selected roles to the single generated host.
 
     become is only enabled for Linux targets (see inventory.py's ansible_become_password
-    note) -- Windows targets are expected to connect as an already-administrative account,
-    and Ansible's become defaults (sudo) don't apply to WinRM connections anyway.
+    note) -- Windows targets (either connection method) are expected to connect as an
+    already-administrative account, and Ansible's become defaults (sudo) don't apply to
+    WinRM/PSRP connections anyway.
     """
     play: dict[str, Any] = {"hosts": "all", "roles": list(roles)}
     if target_os is TargetOS.LINUX:

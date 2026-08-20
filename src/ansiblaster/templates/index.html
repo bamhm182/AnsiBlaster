@@ -86,6 +86,7 @@
                 >
                   <option value="{{ default_ports['linux'] }}" data-os="linux" selected>SSH</option>
                   <option value="{{ default_ports['windows'] }}" data-os="windows">WinRM</option>
+                  <option value="{{ default_ports['windows_psrp'] }}" data-os="windows_psrp">PSRP</option>
                 </select>
                 <input type="number" name="target_port" id="target-port-input"
                        value="{{ default_ports['linux'] }}" required>
@@ -199,6 +200,14 @@
       port: {{ default_ports['windows'] }},
       username: {{ defaults.windows.username | tojson_script }},
       password: {{ defaults.windows.password | tojson_script }}
+    },
+    // Same Windows credentials as the WinRM preset above -- config.yaml has no separate psrp
+    // bucket, since PSRP just talks to the same target with a different Ansible connection
+    // plugin, not a different account.
+    windows_psrp: {
+      port: {{ default_ports['windows_psrp'] }},
+      username: {{ defaults.windows.username | tojson_script }},
+      password: {{ defaults.windows.password | tojson_script }}
     }
   };
 
@@ -211,18 +220,21 @@
   }
 
   // ---------------------------------------------------------------------
-  // Port preset dropdown: picking "SSH"/"WinRM" is now how a run's OS gets chosen (there's no
-  // separate Linux/Windows field to keep in sync with it) -- each <option> carries both the
-  // port it implies (its value, which fills the adjacent port input) and the OS it implies via
-  // data-os, which drives #target-os-select (hidden, still what actually gets submitted) and,
-  // through it, applyOsDefaults()'s port/username/password fill-in.
+  // Port preset dropdown: picking "SSH"/"WinRM"/"PSRP" is now how a run's OS+connection method
+  // gets chosen (there's no separate Linux/Windows field to keep in sync with it) -- each
+  // <option> carries both the port it implies (its value, which fills the adjacent port input)
+  // and the OS/connection it implies via data-os, which drives #target-os-select (hidden,
+  // still what actually gets submitted) and, through it, applyOsDefaults()'s
+  // port/username/password fill-in. Picking a preset re-runs the reachability check right
+  // away (rather than waiting for the port field to lose focus) since the port/protocol just
+  // changed out from under whatever was last checked.
   // ---------------------------------------------------------------------
   function applyPortPreset(select) {
     const os = select.selectedOptions[0]?.dataset.os || "linux";
     const osField = document.getElementById("target-os-select");
     osField.value = os;
     applyOsDefaults(osField);
-    resetPortStatusDot();
+    checkTargetPort();
   }
 
   // ---------------------------------------------------------------------
@@ -572,11 +584,15 @@
     document.getElementById("target-host-input").value = detail.dataset.targetHost;
     document.getElementById("target-port-input").value = detail.dataset.targetPort;
     document.getElementById("target-user-input").value = detail.dataset.targetUser;
-    // Reflects the run's port in the preset dropdown too, if it happens to match one of the
-    // presets -- if it was a custom port, .value falls back to no option selected, which is
-    // more honest than showing a preset that doesn't actually match. Either way, the hidden
-    // target-os-select above (not this dropdown) is what's actually authoritative and submitted.
-    document.getElementById("target-port-preset").value = detail.dataset.targetPort;
+    // Reflects the run's OS/connection in the preset dropdown too, matched by data-os rather
+    // than by port -- WinRM and PSRP share the same default port (5985), so matching on port
+    // alone would always land on whichever of the two comes first in the <select>. Either way,
+    // the hidden target-os-select above (not this dropdown) is what's actually authoritative
+    // and submitted, so this is purely a display nicety.
+    const portPreset = document.getElementById("target-port-preset");
+    portPreset.selectedIndex = Array.from(portPreset.options).findIndex(
+      (opt) => opt.dataset.os === detail.dataset.targetOs
+    );
     resetPortStatusDot();
 
     document.querySelectorAll('input[name="roles"]').forEach((checkbox) => {

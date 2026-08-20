@@ -16,11 +16,11 @@
       </button>
       <button
         type="button"
-        class="icon-button"
+        class="icon-button eyeball-button"
         title="View {{ name }} playbook"
         aria-label="View {{ name }} playbook"
         onclick="openViewer('playbook', '{{ name }}')"
-      >&#128065;</button>
+      >{% include "partials/eye_icon.html" %}</button>
       <span class="list-item-arrow" aria-hidden="true">&#9656;</span>
     </div>
   {% endfor %}

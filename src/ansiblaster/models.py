@@ -24,10 +24,14 @@ def _new_id() -> str:
 
 
 class TargetOS(str, enum.Enum):
-    """Operating system of a run's target host, determining connection method."""
+    """Target host's OS *and* connection method -- Windows has two: WINDOWS means the `winrm`
+    connection plugin, WINDOWS_PSRP means `psrp` (see inventory.py). Both are still just
+    "Windows" for every other decision keyed off this enum (become is skipped for anything
+    that isn't LINUX -- see jobs.py -- rather than enumerating every non-Linux member)."""
 
     LINUX = "linux"
     WINDOWS = "windows"
+    WINDOWS_PSRP = "windows_psrp"
 
 
 class RunStatus(str, enum.Enum):

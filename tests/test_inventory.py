@@ -12,6 +12,10 @@ def test_default_port_windows():
     assert default_port(TargetOS.WINDOWS) == 5985
 
 
+def test_default_port_windows_psrp():
+    assert default_port(TargetOS.WINDOWS_PSRP) == 5985
+
+
 def test_build_inventory_uses_single_host_alias():
     inventory = build_inventory(
         target_os=TargetOS.LINUX,
@@ -121,3 +125,57 @@ def test_build_inventory_windows_ignores_cert_validation():
     )
 
     assert inventory["all"]["hosts"][HOST_ALIAS]["ansible_winrm_server_cert_validation"] == "ignore"
+
+
+def test_build_inventory_windows_psrp_sets_psrp_connection_vars_with_ntlm():
+    inventory = build_inventory(
+        target_os=TargetOS.WINDOWS_PSRP,
+        target_host="10.0.0.5",
+        target_port=5985,
+        target_user="Administrator",
+        target_password="hunter2",
+    )
+
+    host_vars = inventory["all"]["hosts"][HOST_ALIAS]
+    assert host_vars["ansible_connection"] == "psrp"
+    assert host_vars["ansible_psrp_auth"] == "ntlm"
+    assert host_vars["ansible_host"] == "10.0.0.5"
+    assert host_vars["ansible_port"] == 5985
+    assert host_vars["ansible_user"] == "Administrator"
+    assert host_vars["ansible_password"] == "hunter2"
+
+
+def test_build_inventory_windows_psrp_protocol_is_http_for_default_port():
+    inventory = build_inventory(
+        target_os=TargetOS.WINDOWS_PSRP,
+        target_host="10.0.0.5",
+        target_port=5985,
+        target_user="Administrator",
+        target_password="hunter2",
+    )
+
+    assert inventory["all"]["hosts"][HOST_ALIAS]["ansible_psrp_protocol"] == "http"
+
+
+def test_build_inventory_windows_psrp_protocol_is_https_for_5986():
+    inventory = build_inventory(
+        target_os=TargetOS.WINDOWS_PSRP,
+        target_host="10.0.0.5",
+        target_port=5986,
+        target_user="Administrator",
+        target_password="hunter2",
+    )
+
+    assert inventory["all"]["hosts"][HOST_ALIAS]["ansible_psrp_protocol"] == "https"
+
+
+def test_build_inventory_windows_psrp_ignores_cert_validation():
+    inventory = build_inventory(
+        target_os=TargetOS.WINDOWS_PSRP,
+        target_host="10.0.0.5",
+        target_port=5986,
+        target_user="Administrator",
+        target_password="hunter2",
+    )
+
+    assert inventory["all"]["hosts"][HOST_ALIAS]["ansible_psrp_cert_validation"] == "ignore"

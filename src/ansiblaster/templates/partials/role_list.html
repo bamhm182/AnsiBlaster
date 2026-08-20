@@ -7,11 +7,11 @@
       </label>
       <button
         type="button"
-        class="icon-button"
+        class="icon-button eyeball-button"
         title="View {{ role }} files"
         aria-label="View {{ role }} files"
         onclick="openViewer('role', '{{ role }}')"
-      >&#128065;</button>
+      >{% include "partials/eye_icon.html" %}</button>
     </div>
   {% endfor %}
 {% else %}
