@@ -10,7 +10,7 @@ templates). Not yet done: the Dockerfile/Docker Hub publishing described under "
 Update this file as the remaining pieces land and decisions evolve — do not let it drift out of
 sync with the actual repo.
 
-## What Ansiblaster is
+## What AnsiBlaster is
 
 A small web UI for running Ansible roles against a single target host on demand:
 

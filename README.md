@@ -1,4 +1,4 @@
-# Ansiblaster
+# AnsiBlaster
 
 [![Docker publish](https://github.com/bamhm182/AnsiBlaster/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/bamhm182/AnsiBlaster/actions/workflows/docker-publish.yml)
 
@@ -33,13 +33,13 @@
 > Automation Platform, formerly Ansible Tower) or [**Semaphore**](https://semaphoreui.com/)
 > — both are real projects with real security postures, built for exactly this kind of job.
 
-Ansiblaster is a small web UI for applying Ansible roles to a single target host on demand:
+AnsiBlaster is a small web UI for applying Ansible roles to a single target host on demand:
 point it at a directory of Ansible roles, check the ones you want, type in a target's
 IP/port/username/password, and hit **Apply** — it runs the selected roles against that host via
 [`ansible-runner`](https://ansible.readthedocs.io/projects/runner/) and streams the live log
 back to your browser.
 
-![Ansiblaster: the docker-host role selected, targeting a local host on the network](docs/screenshot.png)
+![AnsiBlaster: the docker-host role selected, targeting a local host on the network](docs/screenshot.png)
 
 ## Features
 
@@ -60,7 +60,7 @@ back to your browser.
 
 ```bash
 git clone <this repo>
-cd Ansiblaster
+cd AnsiBlaster
 cp .env.example .env
 docker compose up -d
 ```
@@ -100,7 +100,7 @@ locally (for Linux/SSH targets — see [`CLAUDE.md`](CLAUDE.md) for why both are
 
 ```bash
 git clone <this repo>
-cd Ansiblaster
+cd AnsiBlaster
 uv sync
 uv run ansiblaster
 ```
