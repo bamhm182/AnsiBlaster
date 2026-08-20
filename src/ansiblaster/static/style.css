@@ -210,6 +210,11 @@ main {
   padding: 0.5rem 0.85rem;
   margin: 0;
 }
+.viewer-empty-hint-icon {
+  display: inline-flex;
+  vertical-align: -0.2em;
+  margin-right: 0.25rem;
+}
 
 /* Both roles and playbooks: .list-item is always the outer row (holding the row-level
    padding/hover/highlight), with the actual clickable "apply/select" control (.role-label or

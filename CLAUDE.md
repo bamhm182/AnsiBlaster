@@ -113,6 +113,14 @@ logs) is persisted so past runs can be reviewed later.
   `browse.py` backs both: a role's "files" are every regular file under its directory
   (`rglob("*")`, relative paths); a playbook's is always exactly one entry, its own filename, so
   the same two-step "browse, then click a file" UI works for both without special-casing either.
+  Once the file list loads, `selectDefaultViewerFile()` auto-loads a file into
+  `.viewer-file-content` without waiting for a click: a role's `tasks/main.yml` if it has one
+  (matched by each file button's `data-relpath`), otherwise whichever file is the *only* one
+  (always true for a playbook) — it issues its own `htmx.ajax()` GET for that file rather than
+  calling `.click()` on the matching button, since that button was just swapped in by the
+  files-list request's own `htmx.ajax()` and isn't necessarily done being wired up for click
+  handling by the time its promise resolves (confirmed via Playwright: a synthetic `.click()`
+  right there was silently a no-op, while issuing the equivalent request directly was not).
   Every lookup re-validates the role/playbook name against the same rules `roles.py`/
   `playbooks.py` use for discovery, and every resolved path (the name itself, and any requested
   file path within a role) is checked to still be inside its expected base directory once

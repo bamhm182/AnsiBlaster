@@ -171,8 +171,9 @@
       </div>
       <div class="bottom-tab-content viewer-layout" data-bottom-content="viewer" hidden>
         <div class="viewer-file-list" id="viewer-file-list">
-          <p class="empty-hint">
-            Click the &#128065; next to a role or playbook to browse its files here.
+          <p class="empty-hint viewer-empty-hint">
+            <span class="viewer-empty-hint-icon">{% include "partials/eye_icon.html" %}</span>
+            Hover a role or playbook and click its eye icon to browse its files here.
           </p>
         </div>
         <div class="viewer-file-content" id="viewer-file-content">
@@ -392,15 +393,38 @@
   // playbook (see role_list.html / playbook_list.html). kind is "role" or "playbook" --
   // GET /{kind}s/{name}/files (partials/file_browser.html) lists that item's files, and
   // clicking one of them is plain hx-get on that fragment's own buttons straight into
-  // #viewer-file-content, so nothing else here needs to know about individual files.
-  // htmx.ajax() rather than a synthetic hx-get element: this is triggered from a plain
-  // onclick handler on a button that isn't itself the one making the request.
+  // #viewer-file-content, so nothing else here needs to know about individual files -- except
+  // selectDefaultViewerFile() below, which loads one of those same files by default once the
+  // list has loaded, so opening the viewer doesn't leave you staring at an empty content pane.
+  // It issues its own htmx.ajax() for that (mirroring the file button's own hx-get) rather
+  // than calling .click() on the button: htmx hadn't finished wiring up the freshly-swapped
+  // buttons' click handling at the point this runs (right after the *previous* htmx.ajax()'s
+  // promise resolves), so a synthetic .click() here was silently a no-op in testing --
+  // htmx.ajax() has no such dependency on another element already being processed.
+  // htmx.ajax() rather than a synthetic hx-get element for both calls: this whole flow is
+  // triggered from a plain onclick handler on a button that isn't itself the one making the
+  // request. It returns a promise that resolves once the swap has settled, which is what lets
+  // the files-list call be awaited before selectDefaultViewerFile() looks for buttons in it.
   // ---------------------------------------------------------------------
-  function openViewer(kind, name) {
+  async function openViewer(kind, name) {
     switchBottomTab("viewer");
     document.getElementById("viewer-file-content").innerHTML =
       '<p class="empty-hint">Select a file on the left to view its contents.</p>';
-    htmx.ajax("GET", `/${kind}s/${encodeURIComponent(name)}/files`, "#viewer-file-list");
+    const baseUrl = `/${kind}s/${encodeURIComponent(name)}`;
+    await htmx.ajax("GET", `${baseUrl}/files`, "#viewer-file-list");
+    selectDefaultViewerFile(baseUrl);
+  }
+
+  function selectDefaultViewerFile(baseUrl) {
+    const buttons = Array.from(document.querySelectorAll("#viewer-file-list .viewer-file-button"));
+    // Prefer a role's tasks/main.yml (the one file everyone actually cares about first) --
+    // otherwise, if there's only one file at all (always true for a playbook), just show that.
+    const defaultButton =
+      buttons.find((btn) => btn.dataset.relpath === "tasks/main.yml") ||
+      (buttons.length === 1 ? buttons[0] : null);
+    if (!defaultButton) return;
+    const path = encodeURIComponent(defaultButton.dataset.relpath);
+    htmx.ajax("GET", `${baseUrl}/file?path=${path}`, "#viewer-file-content");
   }
 
   // ---------------------------------------------------------------------

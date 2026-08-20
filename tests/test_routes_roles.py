@@ -28,6 +28,9 @@ def test_role_files_lists_the_roles_files(client, tmp_path):
 
     assert response.status_code == 200
     assert "tasks/main.yml" in response.text
+    # index.html's selectDefaultViewerFile() matches on this attribute to auto-select
+    # tasks/main.yml when a role has more than one file.
+    assert 'data-relpath="tasks/main.yml"' in response.text
 
 
 def test_role_files_unknown_role_404s(client):
