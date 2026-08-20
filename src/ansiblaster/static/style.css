@@ -374,6 +374,28 @@ main {
 
 /* ---------- Bottom panel (Log / History) ---------- */
 
+/* Drag handle between the 3-column workspace and the bottom panel -- mousedown/move/up
+   logic lives in index.html, this just gives it a grabbable target + hover/active feedback. */
+.panel-resizer {
+  flex: 0 0 5px;
+  background: var(--bg-inset);
+  cursor: row-resize;
+}
+.panel-resizer:hover,
+body.is-resizing .panel-resizer {
+  background: var(--accent);
+}
+.panel-resizer:has(+ .bottom-panel.collapsed) {
+  cursor: default;
+  pointer-events: none;
+}
+
+/* Dragging: suppress text selection / iframe-style pointer weirdness for the duration. */
+body.is-resizing {
+  cursor: row-resize;
+  user-select: none;
+}
+
 .bottom-panel {
   flex: 0 0 auto;
   display: flex;
@@ -466,8 +488,11 @@ main {
 .run-tab {
   background: var(--bg-elevated);
   border: none;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   color: var(--fg-muted);
-  padding: 0.35rem 0.85rem;
+  padding: 0.35rem 0.6rem 0.35rem 0.85rem;
   font-size: 0.75rem;
   white-space: nowrap;
   cursor: pointer;
@@ -486,8 +511,36 @@ main {
   width: 0.4rem;
   height: 0.4rem;
   border-radius: 50%;
-  margin-right: 0.35rem;
+  flex: 0 0 auto;
   background: var(--yellow);
+}
+.run-tab-label {
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.run-tab-close {
+  background: none;
+  border: none;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+  padding: 0 0.15rem;
+  font-size: 0.9rem;
+  line-height: 1;
+  border-radius: 3px;
+}
+.run-tab-close:hover {
+  opacity: 1;
+  color: var(--red);
+  background: var(--bg-inset);
 }
 .run-tab[data-status="successful"] .run-tab-status-dot {
   background: var(--green);

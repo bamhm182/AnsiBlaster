@@ -154,8 +154,35 @@ logs) is persisted so past runs can be reviewed later.
   returned (from `POST /runs` or `GET /runs/{job_id}`), creates or reuses that run's tab
   button + content pane, calls `htmx.process()` on it (so the Cancel button's `hx-post` still
   works) and `connectRunStream()` if the run is still active
-  (`run_detail.html`'s `data-active="true"`). Closing a tab (`closeRunTab()`) closes its
-  `EventSource` before removing the DOM nodes, so an abandoned tab doesn't leak a connection.
+  (`run_detail.html`'s `data-active="true"`). Each tab is a `<div class="run-tab">` (not a
+  `<button>` — it wraps two buttons, `.run-tab-label` and `.run-tab-close`, and a button can't
+  nest inside a button) with a single delegated click listener on `#run-tabs`, since
+  `openRunTab()` replaces a tab's `innerHTML` wholesale on every status/log refresh, which would
+  silently drop per-button listeners bound directly to the old nodes. Tabs also carry
+  `data-active` (mirrored from `run_detail.html`) so the close handler below can tell whether to
+  prompt without re-reading the DOM.
+- **Closing a run tab** goes through `requestCloseRunTab(runId)`, wired to both the tab strip's
+  `.run-tab-close` button and `run_detail.html`'s own close button (`onclick`, since that markup
+  is inserted via raw `innerHTML` rather than htmx's pipeline). If the tab's run is still
+  active, it shows a `window.confirm()` ("stop it and close the tab?") before doing anything —
+  declining leaves the tab open and running untouched; accepting `POST`s
+  `/runs/{job_id}/cancel` first. Either way (or immediately, for an already-finished run)
+  `closeRunTab()` then closes that run's `EventSource` before removing the DOM nodes, so an
+  abandoned tab doesn't leak a connection or leave an orphaned job running with nothing left to
+  show its log.
+- **The History tab refreshes itself** (`refreshHistory()`, a `fetch("/runs")` that replaces
+  `#run-list`'s `innerHTML`) rather than requiring the panel's manual "Refresh history" button —
+  called right after a run is submitted (so it appears as `pending`/`running` immediately),
+  again when its SSE stream's `done` event fires, and again after a cancel-via-close, since
+  `closeRunTab()` tears down that run's `EventSource` itself and so its own `done` listener
+  never gets the chance to fire.
+- **The panel between the 3-column workspace and the bottom panel is drag-resizable**: a thin
+  `#panel-resizer` div (`role="separator"`) sits between them; a `mousedown` on it starts
+  tracking `mousemove` and sets `#bottom-panel-body`'s inline `height` directly from the
+  cursor's distance to the viewport bottom (clamped to a sane min/max). Since `.workspace` above
+  it is `flex: 1`, it grows or shrinks to fill whatever space the drag leaves automatically —
+  no separate logic needed for the top half. Disabled (via CSS `:has()` + `pointer-events:
+  none`) while `.bottom-panel` is `.collapsed`, since there's nothing to resize then.
 
 ### Persistence
 

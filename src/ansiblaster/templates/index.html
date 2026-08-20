@@ -101,6 +101,14 @@
     </section>
   </div>
 
+  <div
+    class="panel-resizer"
+    id="panel-resizer"
+    role="separator"
+    aria-orientation="horizontal"
+    aria-label="Resize log panel"
+  ></div>
+
   <section class="bottom-panel" id="bottom-panel">
     <div class="bottom-panel-header">
       <div class="bottom-tabs">
@@ -297,6 +305,7 @@
         // Best-effort refresh for the final status/rc -- the log itself is already fully
         // populated from the stream regardless.
       }
+      refreshHistory();
     });
 
     // EventSource auto-retries on transient network errors; only clean up once the browser
@@ -346,23 +355,40 @@
       closeRunStream(runId);
     }
 
+    // A plain <div> wrapper, not a <button> -- it holds two buttons (label + close), and a
+    // button can't nest inside a button per the HTML content model.
     let tabButton = document.querySelector(`.run-tab[data-run-id="${runId}"]`);
     if (!tabButton) {
-      tabButton = document.createElement("button");
-      tabButton.type = "button";
+      tabButton = document.createElement("div");
       tabButton.className = "run-tab";
       tabButton.dataset.runId = runId;
-      tabButton.addEventListener("click", () => activateRunTab(runId));
       document.getElementById("run-tabs").appendChild(tabButton);
     }
     tabButton.dataset.status = detail.dataset.status;
+    tabButton.dataset.active = detail.dataset.active;
     tabButton.innerHTML =
-      '<span class="run-tab-status-dot"></span>' + escapeHtml(detail.dataset.targetHost);
+      '<button type="button" class="run-tab-label">' +
+      '<span class="run-tab-status-dot"></span>' + escapeHtml(detail.dataset.targetHost) +
+      "</button>" +
+      '<button type="button" class="run-tab-close" aria-label="Close run tab">&times;</button>';
 
     document.getElementById("no-runs-hint")?.remove();
     activateRunTab(runId);
     switchBottomTab("log");
   }
+
+  // Delegated (not per-button) since openRunTab() replaces each tab's innerHTML wholesale on
+  // every update (status/log refresh), which would otherwise silently drop listeners bound
+  // directly to the old nodes.
+  document.getElementById("run-tabs").addEventListener("click", (evt) => {
+    const tab = evt.target.closest(".run-tab");
+    if (!tab) return;
+    if (evt.target.closest(".run-tab-close")) {
+      requestCloseRunTab(tab.dataset.runId);
+    } else if (evt.target.closest(".run-tab-label")) {
+      activateRunTab(tab.dataset.runId);
+    }
+  });
 
   function activateRunTab(runId) {
     document.querySelectorAll(".run-tab").forEach((btn) => {
@@ -386,6 +412,26 @@
         '<p class="empty-hint" id="no-runs-hint">' +
         "No active runs. Apply a set of roles to see live output here.</p>";
     }
+  }
+
+  // Closing a tab for a still-running job silently orphans that ansible-runner process (it
+  // keeps running with nothing left to show its log) unless we stop it first, so ask before
+  // closing one that's still pending/running. Finished runs close with no prompt.
+  async function requestCloseRunTab(runId) {
+    const tab = document.querySelector(`.run-tab[data-run-id="${runId}"]`);
+    const isActive = tab ? tab.dataset.active === "true" : false;
+    if (isActive) {
+      if (!window.confirm("This run is still in progress. Stop it and close the tab?")) return;
+      try {
+        await fetch(`/runs/${runId}/cancel`, { method: "POST" });
+      } catch (err) {
+        // Best-effort -- still close the tab locally even if the cancel request itself failed.
+      }
+      // closeRunTab() below tears down this run's EventSource itself, so the stream's own
+      // "done" listener (which normally triggers this) will never fire for a cancel-via-close.
+      refreshHistory();
+    }
+    closeRunTab(runId);
   }
 
   // ---------------------------------------------------------------------
@@ -412,6 +458,7 @@
         return;
       }
       openRunTab(text);
+      refreshHistory();
     } catch (err) {
       applyFormError.textContent = "Request failed: " + err;
       applyFormError.hidden = false;
@@ -427,6 +474,51 @@
     const text = await response.text();
     if (response.ok) openRunTab(text);
   });
+
+  // Keeps the History tab's list in sync with newly-created and newly-finished runs without
+  // requiring a manual page refresh or click on "Refresh history" -- called right after a run
+  // is submitted (so it shows up as "pending"/"running" immediately) and again when its SSE
+  // stream signals completion (see connectRunStream's "done" listener above).
+  async function refreshHistory() {
+    try {
+      const response = await fetch("/runs");
+      if (response.ok) document.getElementById("run-list").innerHTML = await response.text();
+    } catch (err) {
+      // Best-effort -- the "Refresh history" button remains as a manual fallback.
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Drag-resize the bottom panel via #panel-resizer. bottom-panel-body has a fixed height
+  // (32vh by default, see style.css); dragging just adjusts that height directly, and since
+  // .workspace is flex:1 in the column above it, the workspace grows/shrinks to fill whatever
+  // space is left automatically -- no separate logic needed to resize the top half.
+  // ---------------------------------------------------------------------
+  (function setupPanelResizer() {
+    const resizer = document.getElementById("panel-resizer");
+    const body = document.getElementById("bottom-panel-body");
+    const panel = document.getElementById("bottom-panel");
+    const MIN_HEIGHT = 100;
+
+    resizer.addEventListener("mousedown", (evt) => {
+      if (panel.classList.contains("collapsed")) return;
+      evt.preventDefault();
+      document.body.classList.add("is-resizing");
+
+      const onMouseMove = (moveEvt) => {
+        const maxHeight = window.innerHeight * 0.9;
+        const height = Math.min(maxHeight, Math.max(MIN_HEIGHT, window.innerHeight - moveEvt.clientY));
+        body.style.height = height + "px";
+      };
+      const onMouseUp = () => {
+        document.body.classList.remove("is-resizing");
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    });
+  })();
 
   syncSelectedRolesSummary();
 </script>
