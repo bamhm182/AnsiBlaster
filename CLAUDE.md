@@ -401,10 +401,14 @@ independent without extra process-management code.
   have secrets access anyway). Requires two repo secrets set in GitHub —
   `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (a Docker Hub access token, not the account
   password) — which aren't and shouldn't be committed anywhere in this repo.
-- **Not verified by a real build**: this session had no Docker daemon available (client only),
-  so the Dockerfile/entrypoint are written against well-established patterns (this mirrors
-  `uv`'s own documented Docker guide for the multi-stage venv approach) and checked as far as
-  possible without one — entrypoint shell syntax was checked (`sh -n`/`dash -n`), and both
-  `python:3.11-slim` and `ghcr.io/astral-sh/uv:latest` were confirmed to actually resolve via
-  the registry APIs — but an actual `docker build`/`docker run` pass is still owed before
-  trusting this in production.
+- **Still not verified by a real `docker build`**: no session so far has had a Docker daemon
+  available (client only). One real bug already slipped through this gap: the builder stage's
+  second `uv sync` originally lacked `--no-editable`, so it installed the project in editable
+  mode — a `.pth` file in site-packages pointing back at the builder stage's `/app/src` — which
+  works inside that stage but breaks the instant the runtime stage copies only `.venv`, since
+  the `.pth` then points nowhere (`ModuleNotFoundError: No module named 'ansiblaster'` at
+  container start). Found via a real `docker compose up` failure report, and the fix was
+  verified by faithfully reproducing the two-stage layering with `uv` directly (separate
+  directories per stage, physically removing the builder's `src/` before testing the "runtime"
+  `.venv` in isolation) rather than guessed at — but that is still not the same as an actual
+  `docker build`/`docker run` pass, which is owed before trusting this in production.
