@@ -310,13 +310,9 @@ main {
 
 /* IP/port and username/password each share a row instead of stacking full-width -- the row
    itself carries the bottom margin so its two labels don't double it up. min-width: 0 lets a
-   flex item shrink below its input's intrinsic width instead of overflowing the row.
-   align-items: flex-start keeps .field-host from being stretched to match .field-port's height
-   now that the Port column holds two stacked controls (preset select + input/dot row) instead
-   of just one -- default flex stretch would otherwise pad the shorter column with dead space. */
+   flex item shrink below its input's intrinsic width instead of overflowing the row. */
 .field-row {
   display: flex;
-  align-items: flex-start;
   gap: 0.5rem;
   margin-bottom: 0.65rem;
 }
@@ -325,10 +321,10 @@ main {
   min-width: 0;
 }
 .field-row-host .field-host {
-  flex: 2;
+  flex: 3;
 }
 .field-row-host .field-port {
-  flex: 1;
+  flex: 1.4;
 }
 .field-row-creds label {
   flex: 1;
@@ -351,25 +347,63 @@ main {
   border-color: var(--accent);
 }
 
-/* Port preset dropdown ("22 (SSH)" / "5985 (WinRM)") + the port number input it fills in, plus
-   the reachability status dot next to that input -- see index.html's applyPortPreset() and
-   checkTargetPort(). Smaller font than the rest of .deploy-target's controls since this whole
-   group lives in the narrower Port column alongside the wider IP address field. */
-.port-preset-select {
+/* Port preset ("SSH" / "WinRM") + the port number input it fills in (see index.html's
+   applyPortPreset()), merged into one visually contiguous control -- a shared border and
+   background around both, with only a thin divider between them -- rather than two
+   separate-looking fields. .port-field-group carries the border/background that
+   .deploy-target select/input normally draw themselves; the children go borderless/
+   transparent so only the group's own outline shows. */
+.port-field-group {
+  display: flex;
+  margin-top: 0.25rem;
+  border: 1px solid var(--bg-inset);
+  border-radius: 4px;
+  background: var(--bg);
+  overflow: hidden;
+}
+.port-field-group:focus-within {
+  border-color: var(--accent);
+}
+.port-field-group select,
+.port-field-group input {
+  margin-top: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+.port-field-group select:focus,
+.port-field-group input:focus {
+  outline: none;
+}
+.port-field-group .port-preset-select {
+  flex: 0 0 auto;
+  width: auto;
   font-size: 0.72rem;
-  padding: 0.3rem 0.4rem;
+  padding: 0.4rem 0.35rem;
+  border-right: 1px solid var(--bg-inset);
+}
+.port-field-group input {
+  flex: 1;
+  min-width: 0;
 }
 
-.port-input-row {
+/* Status area, pinned directly above the Apply button (outside .deploy-target's scrollable
+   area, like the Apply button itself) -- "Status: <dot> <text>", driven by index.html's
+   checkTargetPort()/resetPortStatusDot(). */
+.target-status {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  margin-top: 0.35rem;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.78rem;
+  flex: 0 0 auto;
 }
-.port-input-row input {
-  flex: 1;
-  min-width: 0;
-  margin-top: 0; /* .port-input-row itself carries the spacing above instead */
+.target-status-label {
+  color: var(--fg-muted);
+  font-weight: 600;
+}
+.port-status-text {
+  color: var(--fg);
 }
 
 .port-status-dot {

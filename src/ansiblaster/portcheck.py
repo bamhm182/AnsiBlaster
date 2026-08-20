@@ -1,39 +1,64 @@
-"""Quick, service-agnostic TCP reachability check for the Deploy column's port status dot.
+"""Quick, service-agnostic TCP reachability check for the Deploy column's status row.
 
-Deliberately just a raw connect-then-close, not a protocol-specific probe. SSH sends its
-version banner unprompted the instant a connection opens, so it could be "banner grabbed" --
-but WinRM is HTTP/SOAP underneath, and HTTP is request-driven: the server sends nothing until
-it *receives* a request, so there's no unprompted banner to read there the way there is for
-SSH. A bare TCP connect is the one check that means the same thing ("is something listening
-here") for both connection types this app supports (see CLAUDE.md's "Ansible execution"
-section), so that's what this does -- it says nothing about what's actually listening, only
-that the port accepted a connection.
+Connects, then makes a best-effort attempt to read whatever the service sends first -- its
+"banner" -- the same thing `nc host port` shows you for a protocol like SSH, which speaks
+first the instant a connection opens (e.g. "SSH-2.0-OpenSSH_10.2"). Not every protocol does
+that: WinRM is HTTP/SOAP underneath, and HTTP is request-driven, so a WinRM listener won't send
+anything until it *receives* a request. This check never sends anything itself, so it treats
+both the same way -- connect, then passively wait a short moment to see if anything arrives --
+which means SSH-like protocols yield a real banner and HTTP-like ones just report "open, no
+banner" instead of erroring or hanging.
 """
 
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 
-DEFAULT_TIMEOUT = 2.0
+CONNECT_TIMEOUT = 2.0
+BANNER_TIMEOUT = 1.5
+BANNER_READ_LIMIT = 256
 
 
-async def check_port(host: str, port: int, timeout: float = DEFAULT_TIMEOUT) -> bool:
-    """Return True if a TCP connection to host:port succeeds within timeout, else False.
+@dataclass
+class PortCheckResult:
+    open: bool
+    banner: str | None = None
 
-    Any failure -- refused, timed out, unresolvable host, network unreachable -- is treated as
-    "closed"; this is a best-effort UI hint, not something callers need to distinguish reasons
-    for.
+
+async def check_port(
+    host: str,
+    port: int,
+    connect_timeout: float = CONNECT_TIMEOUT,
+    banner_timeout: float = BANNER_TIMEOUT,
+) -> PortCheckResult:
+    """Connect to host:port and report whether it's open, plus any banner it volunteers.
+
+    Any connect failure -- refused, timed out, unresolvable host, network unreachable -- is
+    reported as closed; this is a best-effort UI hint, not something callers need to
+    distinguish reasons for.
     """
     try:
-        _reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(host, port), timeout=timeout
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(host, port), timeout=connect_timeout
         )
     except (TimeoutError, OSError):
-        return False
+        return PortCheckResult(open=False)
 
-    writer.close()
+    banner: str | None = None
     try:
-        await writer.wait_closed()
-    except OSError:
-        pass  # the connection already told us what we needed to know
-    return True
+        data = await asyncio.wait_for(reader.read(BANNER_READ_LIMIT), timeout=banner_timeout)
+        if data:
+            # Take just the first line -- a status row is one line, and a version banner is
+            # everything worth showing there anyway.
+            banner = data.decode(errors="replace").splitlines()[0].strip() or None
+    except (TimeoutError, OSError):
+        pass  # nothing volunteered within the wait -- still open, just no banner (e.g. WinRM)
+    finally:
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except OSError:
+            pass
+
+    return PortCheckResult(open=True, banner=banner)

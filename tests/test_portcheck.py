@@ -14,26 +14,54 @@ def _unused_port() -> int:
         return sock.getsockname()[1]
 
 
-async def test_check_port_true_when_something_is_listening():
-    server = await asyncio.start_server(lambda reader, writer: None, "127.0.0.1", 0)
+async def test_check_port_reports_banner_when_server_speaks_first():
+    async def handle(reader, writer):
+        writer.write(b"SSH-2.0-OpenSSH_10.2\r\n")
+        await writer.drain()
+        await asyncio.sleep(10)  # stay connected until the test tears the server down
+
+    server = await asyncio.start_server(handle, "127.0.0.1", 0)
     try:
         port = server.sockets[0].getsockname()[1]
-        assert await check_port("127.0.0.1", port) is True
+        result = await check_port("127.0.0.1", port)
+        assert result.open is True
+        assert result.banner == "SSH-2.0-OpenSSH_10.2"
     finally:
         server.close()
         await server.wait_closed()
 
 
-async def test_check_port_false_when_connection_is_refused():
-    assert await check_port("127.0.0.1", _unused_port()) is False
+async def test_check_port_open_with_no_banner_when_server_stays_silent():
+    async def handle(reader, writer):
+        await asyncio.sleep(10)  # never sends anything, like an HTTP/WinRM listener would
+
+    server = await asyncio.start_server(handle, "127.0.0.1", 0)
+    try:
+        port = server.sockets[0].getsockname()[1]
+        result = await check_port("127.0.0.1", port, banner_timeout=0.3)
+        assert result.open is True
+        assert result.banner is None
+    finally:
+        server.close()
+        await server.wait_closed()
 
 
-async def test_check_port_false_on_timeout():
+async def test_check_port_closed_when_connection_is_refused():
+    result = await check_port("127.0.0.1", _unused_port())
+    assert result.open is False
+    assert result.banner is None
+
+
+async def test_check_port_closed_on_connect_timeout():
     # TEST-NET-2 (RFC 5737): reserved for documentation, guaranteed non-routable, so this
     # either black-holes (hits our timeout) or gets an immediate "unreachable" -- either way
-    # the check should come back False, quickly, without raising.
-    assert await check_port("198.51.100.1", 22, timeout=0.3) is False
+    # the check should come back closed, quickly, without raising.
+    result = await check_port("198.51.100.1", 22, connect_timeout=0.3)
+    assert result.open is False
+    assert result.banner is None
 
 
-async def test_check_port_false_for_unresolvable_host():
-    assert await check_port("this-host-does-not-resolve.invalid", 22, timeout=0.3) is False
+async def test_check_port_closed_for_unresolvable_host():
+    result = await check_port("this-host-does-not-resolve.invalid", 22, connect_timeout=0.3)
+    assert result.open is False
+    assert result.banner is None

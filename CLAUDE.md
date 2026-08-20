@@ -62,15 +62,26 @@ logs) is persisted so past runs can be reviewed later.
   role-list refresh) — unchecking happens back in the Roles column, not in this summary. The
   Apply button is pinned outside the column's scrollable areas, `flex: 0 0 auto` after two
   `flex: 1` scrolling sections (selected-roles summary, then the target form). There is no
-  visible Linux/Windows picker in the target form: a `<select>` of port presets ("22 (SSH)" /
-  "5985 (WinRM)", defaulting to 22) both fills in the port field and implies the OS, written
-  into a hidden `target_os` input (`applyPortPreset()` in `index.html`) — the only thing
-  actually submitted for OS is that hidden field, so `POST /runs` and everything downstream of
-  it (inventory building, `become`, etc.) are unchanged. A status dot next to the port field
-  calls `GET /target/check-port` (a plain, service-agnostic TCP connect — see `portcheck.py`)
-  whenever that field loses focus, via plain `fetch()` rather than htmx so the request's query
-  string can't end up including the password field's value the way htmx's default form-scraping
-  would.
+  visible Linux/Windows picker in the target form: a small "SSH"/"WinRM" `<select>` is merged
+  with the port number input into one bordered control (`.port-field-group` in `style.css` —
+  the select and input themselves are borderless/transparent so only the group's shared border
+  shows, making them read as one field rather than two) — picking a preset fills the port
+  input (22/5985, still freely editable afterward for a non-standard port) and writes the OS it
+  implies into a hidden `target_os` input (`applyPortPreset()` in `index.html`). That hidden
+  field is the only thing actually submitted for OS, so `POST /runs` and everything downstream
+  of it (inventory building, `become`, etc.) are unchanged by any of this. A dedicated Status
+  row ("Status: ⬤ <text>") sits just above the Apply button, outside the scrollable target
+  form like the button itself, and shows a quick reachability check
+  (`checkTargetPort()`/`resetPortStatusDot()` in `index.html`, calling `GET /target/check-port`
+  — see `portcheck.py`) run whenever the port field loses focus: the text is whatever banner
+  the target volunteers unprompted (e.g. `SSH-2.0-OpenSSH_10.2`, the same thing `nc host port`
+  would show), since a protocol like SSH sends that the instant a connection opens. WinRM
+  targets just show "open, no banner" — WinRM is HTTP/SOAP underneath, and HTTP is
+  request-driven, so nothing arrives until the client sends a request first, which this check
+  deliberately never does (keeping the same passive connect-and-listen behavior for every
+  target rather than branching per protocol is what makes it "service-agnostic"). That call is
+  plain `fetch()` rather than htmx so the request's query string can't end up including the
+  password field's value the way htmx's default form-scraping would.
 - Below the three columns, a full-width collapsible panel has two tabs: **Log** (one sub-tab
   per concurrent run, opened by submitting the form or clicking a run in History) and
   **History** (`GET /runs`, restyled but otherwise unchanged). Role/playbook checkboxes live in
@@ -269,7 +280,7 @@ foreign key to some playbook table (playbooks aren't DB entities either — they
 | `GET /runs/{job_id}/stream` | SSE endpoint — live log lines + status transitions for the job; closes when the run ends |
 | `GET /runs/{job_id}/log` | Full plain-text log — used for replaying a finished run, or backfilling before SSE attaches |
 | `POST /runs/{job_id}/cancel` | Cancel an in-progress run (`ansible-runner` stop) → status becomes `canceled` |
-| `GET /target/check-port` | JSON `{"open": bool}` — quick, service-agnostic TCP reachability check for the Deploy column's port status dot (`host`/`port` query params) |
+| `GET /target/check-port` | JSON `{"open": bool, "banner": str \| null}` — quick, service-agnostic TCP reachability + banner check for the Deploy column's Status row (`host`/`port` query params) |
 
 ## Configuration file
 
@@ -346,9 +357,10 @@ src/ansiblaster/
 │                       # persists status/log to DB and pushes lines to the job's queue.
 │                       # Also stdout_log_path(run), mirroring ansible-runner's own
 │                       # private_data_dir/artifacts/<ident>/stdout convention
-├── portcheck.py        # check_port(host, port): a plain, service-agnostic async TCP connect
-│                       # (not a protocol-specific banner grab) backing the Deploy column's
-│                       # port status dot
+├── portcheck.py        # check_port(host, port): service-agnostic async TCP connect + a
+│                       # best-effort read of whatever banner the target volunteers unprompted
+│                       # (works for SSH, naturally yields none for WinRM) backing the Deploy
+│                       # column's Status row
 ├── routes/
 │   ├── __init__.py     # aggregates routers for app.py to include
 │   ├── pages.py        # GET /

@@ -73,28 +73,22 @@
             </label>
             <label class="field-port">
               Port
-              <select
-                id="target-port-preset"
-                class="port-preset-select"
-                aria-label="Port preset"
-                onchange="applyPortPreset(this)"
-              >
-                <option value="{{ default_ports['linux'] }}" data-os="linux" selected>
-                  {{ default_ports['linux'] }} (SSH)
-                </option>
-                <option value="{{ default_ports['windows'] }}" data-os="windows">
-                  {{ default_ports['windows'] }} (WinRM)
-                </option>
-              </select>
-              <div class="port-input-row">
+              <!-- One visually merged control, not two separate fields: the preset picks the
+                   protocol (and, via data-os, the OS -- see applyPortPreset() below) while the
+                   number input next to it holds the actual port, pre-filled from the preset but
+                   still freely editable (e.g. a non-standard SSH port). -->
+              <div class="port-field-group">
+                <select
+                  id="target-port-preset"
+                  class="port-preset-select"
+                  aria-label="Port preset"
+                  onchange="applyPortPreset(this)"
+                >
+                  <option value="{{ default_ports['linux'] }}" data-os="linux" selected>SSH</option>
+                  <option value="{{ default_ports['windows'] }}" data-os="windows">WinRM</option>
+                </select>
                 <input type="number" name="target_port" id="target-port-input"
                        value="{{ default_ports['linux'] }}" required>
-                <span
-                  id="port-status-dot"
-                  class="port-status-dot"
-                  title="Not checked yet."
-                  aria-label="Port status: not checked"
-                ></span>
               </div>
             </label>
           </div>
@@ -114,6 +108,12 @@
         </div>
 
         <div class="form-error" id="apply-form-error" hidden></div>
+
+        <div class="target-status" id="target-status">
+          <span class="target-status-label">Status:</span>
+          <span id="port-status-dot" class="port-status-dot" aria-hidden="true"></span>
+          <span id="port-status-text" class="port-status-text">Not checked yet.</span>
+        </div>
 
         <button type="submit" class="apply-button" id="apply-button">Apply</button>
       </form>
@@ -193,10 +193,11 @@
   }
 
   // ---------------------------------------------------------------------
-  // Port preset dropdown: picking "22 (SSH)"/"5985 (WinRM)" is now how a run's OS gets chosen
-  // (there's no separate Linux/Windows field to keep in sync with it) -- each <option> carries
-  // the OS it implies via data-os, which drives #target-os-select (hidden, still what actually
-  // gets submitted) and, through it, applyOsDefaults()'s port/username/password fill-in.
+  // Port preset dropdown: picking "SSH"/"WinRM" is now how a run's OS gets chosen (there's no
+  // separate Linux/Windows field to keep in sync with it) -- each <option> carries both the
+  // port it implies (its value, which fills the adjacent port input) and the OS it implies via
+  // data-os, which drives #target-os-select (hidden, still what actually gets submitted) and,
+  // through it, applyOsDefaults()'s port/username/password fill-in.
   // ---------------------------------------------------------------------
   function applyPortPreset(select) {
     const os = select.selectedOptions[0]?.dataset.os || "linux";
@@ -207,39 +208,47 @@
   }
 
   // ---------------------------------------------------------------------
-  // Port status dot: a quick, service-agnostic reachability check (see portcheck.py -- a bare
-  // TCP connect, not a protocol-specific banner grab, since that wouldn't mean the same thing
-  // for WinRM as it does for SSH) run whenever the Port field loses focus. Plain fetch()
-  // rather than htmx: htmx's default parameter collection would scrape every field in
-  // #apply-form (since host/port both live inside it), which would put the password field's
-  // value into this GET request's query string for no reason.
+  // Status area (above the Apply button): a quick, service-agnostic reachability check --
+  // "Status: <dot> <banner>", the same banner text `nc host port` would show for a protocol
+  // like SSH that speaks first on connect (e.g. "SSH-2.0-OpenSSH_10.2") -- run whenever the
+  // Port field loses focus. See portcheck.py for why WinRM targets just show "open, no
+  // banner" instead: it's HTTP-driven and won't send anything unprompted, and this check never
+  // sends anything itself. Plain fetch() rather than htmx: htmx's default parameter collection
+  // would scrape every field in #apply-form (since host/port both live inside it), which would
+  // put the password field's value into this GET request's query string for no reason.
   // ---------------------------------------------------------------------
   function resetPortStatusDot() {
-    const dot = document.getElementById("port-status-dot");
-    dot.className = "port-status-dot";
-    dot.title = "Not checked yet.";
+    document.getElementById("port-status-dot").className = "port-status-dot";
+    document.getElementById("port-status-text").textContent = "Not checked yet.";
   }
 
   async function checkTargetPort() {
     const host = document.getElementById("target-host-input").value.trim();
     const port = document.getElementById("target-port-input").value.trim();
     const dot = document.getElementById("port-status-dot");
+    const text = document.getElementById("port-status-text");
     if (!host || !port) {
       resetPortStatusDot();
       return;
     }
     dot.className = "port-status-dot is-checking";
-    dot.title = "Checking…";
+    text.textContent = "Checking…";
     try {
       const response = await fetch(
         `/target/check-port?host=${encodeURIComponent(host)}&port=${encodeURIComponent(port)}`
       );
       const result = await response.json();
       dot.className = "port-status-dot " + (result.open ? "is-open" : "is-closed");
-      dot.title = result.open ? "Port is open." : "Port is closed or unreachable.";
+      if (!result.open) {
+        text.textContent = "Closed or unreachable.";
+      } else if (result.banner) {
+        text.textContent = result.banner;
+      } else {
+        text.textContent = "Open (no banner).";
+      }
     } catch (err) {
       dot.className = "port-status-dot is-closed";
-      dot.title = "Check failed: " + err;
+      text.textContent = "Check failed.";
     }
   }
 
