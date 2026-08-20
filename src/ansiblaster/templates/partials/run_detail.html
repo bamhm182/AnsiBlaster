@@ -4,6 +4,10 @@
   class="run-detail status-{{ run.status.value }}"
   data-run-id="{{ run.id }}"
   data-target-host="{{ run.target_host }}"
+  data-target-os="{{ run.target_os.value }}"
+  data-target-port="{{ run.target_port }}"
+  data-target-user="{{ run.target_user }}"
+  data-roles="{{ run.roles | tojson }}"
   data-status="{{ run.status.value }}"
   data-active="{{ 'true' if is_active else 'false' }}"
 >
@@ -11,10 +15,10 @@
     <h3>{{ run.target_host }}</h3>
     <button
       type="button"
-      class="run-detail-close"
-      onclick="requestCloseRunTab('{{ run.id }}')"
-      aria-label="Close"
-    >&times;</button>
+      class="run-detail-reuse"
+      onclick="loadRunIntoDeploy('{{ run.id }}')"
+      title="Load this run's target and roles into the Deploy form"
+    >Load into Deploy</button>
   </div>
 
   <dl class="run-detail-meta">

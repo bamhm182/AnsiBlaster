@@ -71,7 +71,7 @@
           <div class="field-row field-row-host">
             <label class="field-host">
               IP address
-              <input type="text" name="target_host" required>
+              <input type="text" name="target_host" id="target-host-input" required>
             </label>
             <label class="field-port">
               Port
@@ -432,6 +432,38 @@
       refreshHistory();
     }
     closeRunTab(runId);
+  }
+
+  // ---------------------------------------------------------------------
+  // "Load into Deploy" button (run_detail.html): re-populates the Deploy column's target form
+  // and role checkboxes from a past/active run, so a run can be quickly repeated or tweaked
+  // without re-typing everything by hand. Replaces the current role selection outright (rather
+  // than unioning, the way a playbook click does) so it exactly mirrors that run.
+  // ---------------------------------------------------------------------
+  function loadRunIntoDeploy(runId) {
+    const detail = document.querySelector(`.run-detail[data-run-id="${runId}"]`);
+    if (!detail) return;
+
+    const osSelect = document.getElementById("target-os-select");
+    osSelect.value = detail.dataset.targetOs;
+    // Fills port/username/password from that OS's configured defaults first -- port and
+    // username are then overwritten below with the run's actual values. The password is
+    // deliberately left at the default: the run's actual password was never persisted (see
+    // CLAUDE.md's "runs table" note), so the configured default is the closest available.
+    applyOsDefaults(osSelect);
+
+    document.getElementById("target-host-input").value = detail.dataset.targetHost;
+    document.getElementById("target-port-input").value = detail.dataset.targetPort;
+    document.getElementById("target-user-input").value = detail.dataset.targetUser;
+
+    document.querySelectorAll('input[name="roles"]').forEach((checkbox) => {
+      checkbox.checked = false;
+    });
+    JSON.parse(detail.dataset.roles).forEach((role) => {
+      const checkbox = document.getElementById("role-" + role);
+      if (checkbox) checkbox.checked = true;
+    });
+    syncSelectedRolesSummary();
   }
 
   // ---------------------------------------------------------------------

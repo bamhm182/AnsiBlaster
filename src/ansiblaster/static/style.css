@@ -592,16 +592,20 @@ body.is-resizing {
   color: var(--fg-muted);
 }
 
-.run-detail-close {
+.run-detail-reuse {
   background: none;
-  border: none;
+  border: 1px solid var(--bg-inset);
   color: var(--fg-muted);
   cursor: pointer;
-  font-size: 1.1rem;
-  line-height: 1;
+  padding: 0.2rem 0.55rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
-.run-detail-close:hover {
-  color: var(--red);
+.run-detail-reuse:hover {
+  color: var(--fg);
+  border-color: var(--accent);
 }
 
 .run-detail-meta {

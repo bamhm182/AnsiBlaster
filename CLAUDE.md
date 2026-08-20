@@ -161,15 +161,24 @@ logs) is persisted so past runs can be reviewed later.
   silently drop per-button listeners bound directly to the old nodes. Tabs also carry
   `data-active` (mirrored from `run_detail.html`) so the close handler below can tell whether to
   prompt without re-reading the DOM.
-- **Closing a run tab** goes through `requestCloseRunTab(runId)`, wired to both the tab strip's
-  `.run-tab-close` button and `run_detail.html`'s own close button (`onclick`, since that markup
-  is inserted via raw `innerHTML` rather than htmx's pipeline). If the tab's run is still
-  active, it shows a `window.confirm()` ("stop it and close the tab?") before doing anything —
-  declining leaves the tab open and running untouched; accepting `POST`s
+- **Closing a run tab** is only exposed on the tab strip's own `.run-tab-close` button —
+  `run_detail.html` used to carry a second close button in its own header, but that read as two
+  redundant close controls for the same tab, so it was replaced (see "Load into Deploy" below).
+  `requestCloseRunTab(runId)` is what the tab strip's close button calls. If the tab's run is
+  still active, it shows a `window.confirm()` ("stop it and close the tab?") before doing
+  anything — declining leaves the tab open and running untouched; accepting `POST`s
   `/runs/{job_id}/cancel` first. Either way (or immediately, for an already-finished run)
   `closeRunTab()` then closes that run's `EventSource` before removing the DOM nodes, so an
   abandoned tab doesn't leak a connection or leave an orphaned job running with nothing left to
   show its log.
+- **"Load into Deploy"**, in `run_detail.html`'s header (where the redundant close button used
+  to live), re-populates the Deploy column's target form and role checkboxes from that run via
+  `loadRunIntoDeploy(runId)`, reading the target fields back off `run_detail.html`'s own
+  `data-target-os`/`data-target-port`/`data-target-user`/`data-roles` attributes. It replaces
+  the current role selection outright (unlike a playbook click, which only ever adds checks) so
+  it exactly mirrors that run. The password field is deliberately left at that OS's *configured*
+  default rather than the run's actual password — the actual password was never persisted (see
+  the `runs` table's password note below) — so there's nothing else to offer there.
 - **The History tab refreshes itself** (`refreshHistory()`, a `fetch("/runs")` that replaces
   `#run-list`'s `innerHTML`) rather than requiring the panel's manual "Refresh history" button —
   called right after a run is submitted (so it appears as `pending`/`running` immediately),
