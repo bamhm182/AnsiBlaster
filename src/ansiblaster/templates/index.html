@@ -53,10 +53,7 @@
 
     <section class="panel panel-deploy" aria-label="Deploy">
       <form id="apply-form">
-        <div class="panel-header">
-          <h2>Deploy</h2>
-          <button type="submit" class="apply-button" id="apply-button">Apply</button>
-        </div>
+        <div class="panel-header"><h2>Deploy</h2></div>
 
         <div class="deploy-selected" id="selected-roles-summary" aria-label="Selected roles">
           <p class="empty-hint">No roles selected.</p>
@@ -70,6 +67,10 @@
           aria-label="Resize selected-roles list"
         ></div>
 
+        <!-- A single scrollable area for the whole target form: a "Host" fieldset (IP/port/
+             credentials) followed by one fieldset per checked role that declares variables
+             (see below) -- both use the same .deploy-vars-role fieldset+legend styling so the
+             two read as one consistent list rather than two visually different sections. -->
         <div class="deploy-target">
           <!-- Which OS this run targets is now inferred entirely from the port preset picked
                below (22/SSH -> linux, 5985/WinRM -> windows) rather than surfaced as its own
@@ -77,59 +78,61 @@
                field of its own. -->
           <input type="hidden" name="target_os" id="target-os-select" value="linux">
 
-          <div class="field-row field-row-host">
-            <label class="field-host">
-              IP address
-              <input type="text" name="target_host" id="target-host-input" required>
-            </label>
-            <label class="field-port">
-              Port
-              <!-- One visually merged control, not two separate fields: the preset picks the
-                   protocol (and, via data-os, the OS -- see applyPortPreset() below) while the
-                   number input next to it holds the actual port, pre-filled from the preset but
-                   still freely editable (e.g. a non-standard SSH port). -->
-              <div class="port-field-group">
-                <select
-                  id="target-port-preset"
-                  class="port-preset-select"
-                  aria-label="Port preset"
-                  onchange="applyPortPreset(this)"
-                >
-                  <option value="{{ default_ports['linux'] }}" data-os="linux" selected>SSH</option>
-                  <option value="{{ default_ports['windows'] }}" data-os="windows">WinRM</option>
-                  <option value="{{ windows_https_port }}" data-os="windows">WinRM (Secure)</option>
-                  <option value="{{ default_ports['windows_psrp'] }}" data-os="windows_psrp">PSRP</option>
-                  <option value="{{ windows_https_port }}" data-os="windows_psrp">PSRP (Secure)</option>
-                </select>
-                <input type="number" name="target_port" id="target-port-input"
-                       value="{{ default_ports['linux'] }}" required>
-              </div>
-            </label>
-          </div>
+          <fieldset class="deploy-vars-role">
+            <legend>Host</legend>
 
-          <div class="field-row field-row-creds">
-            <label>
-              Username
-              <input type="text" name="target_user" id="target-user-input"
-                     value="{{ defaults.ssh.username }}" required>
-            </label>
-            <label>
-              Password
-              <input type="password" name="target_password" id="target-password-input"
-                     value="{{ defaults.ssh.password }}">
-            </label>
-          </div>
+            <div class="field-row field-row-host">
+              <label class="field-host">
+                IP address
+                <input type="text" name="target_host" id="target-host-input" required>
+              </label>
+              <label class="field-port">
+                Port
+                <!-- One visually merged control, not two separate fields: the preset picks the
+                     protocol (and, via data-os, the OS -- see applyPortPreset() below) while the
+                     number input next to it holds the actual port, pre-filled from the preset but
+                     still freely editable (e.g. a non-standard SSH port). -->
+                <div class="port-field-group">
+                  <select
+                    id="target-port-preset"
+                    class="port-preset-select"
+                    aria-label="Port preset"
+                    onchange="applyPortPreset(this)"
+                  >
+                    <option value="{{ default_ports['linux'] }}" data-os="linux" selected>SSH</option>
+                    <option value="{{ default_ports['windows'] }}" data-os="windows">WinRM</option>
+                    <option value="{{ windows_https_port }}" data-os="windows">WinRM (Secure)</option>
+                    <option value="{{ default_ports['windows_psrp'] }}" data-os="windows_psrp">PSRP</option>
+                    <option value="{{ windows_https_port }}" data-os="windows_psrp">PSRP (Secure)</option>
+                  </select>
+                  <input type="number" name="target_port" id="target-port-input"
+                         value="{{ default_ports['linux'] }}" required>
+                </div>
+              </label>
+            </div>
+
+            <div class="field-row field-row-creds">
+              <label>
+                Username
+                <input type="text" name="target_user" id="target-user-input"
+                       value="{{ defaults.ssh.username }}" required>
+              </label>
+              <label>
+                Password
+                <input type="password" name="target_password" id="target-password-input"
+                       value="{{ defaults.ssh.password }}">
+              </label>
+            </div>
+          </fieldset>
 
           <!-- Variables: one fieldset per checked role that declares any (via
                meta/argument_specs.yml -- see role_vars.py and CLAUDE.md's "Role variables"
                section), rebuilt wholesale by syncRoleVariables() alongside
-               selected-roles-summary above. Lives under the credentials fields, in the same
-               scrollable area, and is the one part of .deploy-target that actually flexes to
-               fill whatever room is left (see style.css) -- everything above it is a handful
-               of fixed fields. Inputs live inside #apply-form's own DOM subtree (unlike role
-               checkboxes, which need the form="apply-form" trick only because they live in a
-               different column/panel), so they're picked up by FormData(applyForm) with no
-               extra wiring. -->
+               selected-roles-summary above. Listed directly under the Host fieldset, in the
+               same scrolling area -- not a separately-scrolling section of its own. Inputs
+               live inside #apply-form's own DOM subtree (unlike role checkboxes, which need
+               the form="apply-form" trick only because they live in a different column/panel),
+               so they're picked up by FormData(applyForm) with no extra wiring. -->
           <div class="deploy-vars" id="deploy-vars-summary" aria-label="Role variables">
             <p class="empty-hint">No variables for the selected roles.</p>
           </div>
@@ -148,6 +151,7 @@
           >&#8635;</button>
           <span id="port-status-dot" class="port-status-dot" aria-hidden="true"></span>
           <span id="port-status-text" class="port-status-text">Not checked yet.</span>
+          <button type="submit" class="apply-button" id="apply-button">Apply</button>
         </div>
       </form>
     </section>

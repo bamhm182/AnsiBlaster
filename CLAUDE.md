@@ -61,12 +61,9 @@ logs) is persisted so past runs can be reviewed later.
   itself scrolling. Playbooks and Roles each have a client-side **fuzzy filter** at the top
   (VS Code command-palette style: query characters must appear in order, not contiguously —
   see `fuzzyMatch()` in `index.html`) that filters the already-rendered list with no server
-  round trip per keystroke, and re-applies itself after a list is refreshed. The Deploy
-  column's **Apply button lives in its `.panel-header`**, next to the `<h2>`, the same slot
-  the Playbooks/Roles headers use for their refresh `.icon-button` — a fixed header height
-  (`.panel-header`'s `height: 2.375rem`) keeps all three headers' bottom borders aligned
-  regardless of what each one contains. Below the header, a small, **fixed-height (not
-  flex-grow) read-only reflection** of whichever role checkboxes are currently checked
+  round trip per keystroke, and re-applies itself after a list is refreshed. Below the Deploy
+  column's header, a small, **fixed-height (not flex-grow) read-only reflection** of whichever
+  role checkboxes are currently checked
   (`syncSelectedRolesSummary()`, delegated off `change` events so it survives a role-list
   refresh) — unchecking happens back in the Roles column, not in this summary, though each
   entry also gets its own eyeball button (same as Roles/Playbooks, see "Viewer tab" below) so a
@@ -76,22 +73,22 @@ logs) is persisted so past runs can be reviewed later.
   measured from the summary's top edge instead of the viewport's bottom, since this one grows
   downward from a fixed top rather than upward from a fixed bottom. Below *that* is the target
   form (`.deploy-target`, now `flex: 1 1 auto` — the one that actually grows to fill whatever
-  the small fixed-height summary above doesn't use): IP/port, username/password, and then the
-  **Variables** area (`.deploy-vars`/`#deploy-vars-summary`) — one `<fieldset>` per checked role
-  that declares any variables via `meta/argument_specs.yml` (see "Role variables
-  (argument_specs)" below) — directly underneath the credentials fields, in that same section.
-  `.deploy-target` is itself `display: flex; flex-direction: column; overflow: hidden`, with
-  only `.deploy-vars` set to `flex: 1 1 auto` and independently `overflow-y: auto` — that's what
-  keeps the IP/port/credentials fields always visible above it while Variables (the thing most
-  likely to be long — many roles × many variables each) is the part that actually scrolls and
-  claims the most space, rather than the whole section scrolling together or splitting a fixed
-  percentage regardless of content. `syncRoleVariables()` rebuilds it wholesale on every
-  selection change, called from the same delegated `change` listener plus every other place
-  `syncSelectedRolesSummary()` is called — `applyPlaybook()`, the page's initial load, and
-  `loadRunIntoDeploy()`. Unlike the role checkboxes (which live in a different column and need
-  the `form="apply-form"` attribute trick), the Variables area's inputs are built directly
-  inside `#apply-form`'s own DOM subtree, so `FormData(applyForm)` picks them up with no extra
-  wiring. There is no visible Linux/Windows picker in the target form: a small "SSH"/"WinRM"/
+  the small fixed-height summary above doesn't use), which is a **single scrolling area**
+  (`overflow-y: auto` on `.deploy-target` itself, nothing scrolling independently inside it)
+  listing one `<fieldset class="deploy-vars-role">` after another: first a static "Host"
+  fieldset (IP/port, then username/password), then one more such fieldset per checked role
+  that declares variables via `meta/argument_specs.yml` (see "Role variables (argument_specs)"
+  below) — the **Variables** area (`.deploy-vars`/`#deploy-vars-summary`), which
+  `syncRoleVariables()` rebuilds wholesale on every selection change and appends directly after
+  the Host fieldset, both using the same fieldset+legend styling so the whole list reads as one
+  consistent set of sections rather than a visually distinct "fixed fields" part and
+  "Variables" part. `syncRoleVariables()` is called from the same delegated `change` listener
+  plus every other place `syncSelectedRolesSummary()` is called — `applyPlaybook()`, the page's
+  initial load, and `loadRunIntoDeploy()`. Unlike the role checkboxes (which live in a
+  different column and need the `form="apply-form"` attribute trick), the Variables area's
+  inputs are built directly inside `#apply-form`'s own DOM subtree, so `FormData(applyForm)`
+  picks them up with no extra wiring. There is no visible Linux/Windows picker in the target
+  form: a small "SSH"/"WinRM"/
   "WinRM (Secure)"/"PSRP"/"PSRP (Secure)" `<select>` is merged with the port number input into
   one bordered
   control (`.port-field-group` in `style.css` — the select and input themselves are
@@ -108,8 +105,10 @@ logs) is persisted so past runs can be reviewed later.
   listener (secure or not), so they get their own `TargetOS` members (`WINDOWS`/`WINDOWS_PSRP`)
   but share default ports and are otherwise treated identically everywhere except
   `inventory.py` (see "Ansible execution" below). A dedicated Status row ("Status: ⟳ ⬤ <text>")
-  sits at the bottom of the column, outside `.deploy-target`'s scrollable area, and shows a
-  quick reachability check (`checkTargetPort()`/`resetPortStatusDot()` in
+  sits at the bottom of the column, outside `.deploy-target`'s scrollable area, with the Apply
+  button on the same row, pushed to its right edge (`margin-left: auto` on `.apply-button`
+  itself rather than a separate wrapper) — the Status row shows a quick reachability check
+  (`checkTargetPort()`/`resetPortStatusDot()` in
   `index.html`, calling `GET /target/check-port` — see `portcheck.py`) run whenever the IP
   address field *or* the Port field loses focus, or a port preset is picked (`applyPortPreset()`
   calls `checkTargetPort()` directly rather than just resetting the dot, since the port/protocol

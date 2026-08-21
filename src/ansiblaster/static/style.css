@@ -142,10 +142,11 @@ main {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  /* Fixed (not min-height) instead of content-driven: each header's content (a refresh
-     .icon-button, or Deploy's own Apply button) is a different height than its h2 alone, which
-     would otherwise leave their border-bottoms sitting at slightly different pixel rows. A
-     fixed height pins all three to the same value regardless of what each one contains. */
+  /* Fixed (not min-height) instead of content-driven: Playbooks/Roles headers are taller than
+     their h2 alone because of the refresh .icon-button sitting in them, but Deploy's header has
+     no button -- left content-sized, its row comes out shorter than the other two, leaving its
+     border-bottom sitting visibly higher than theirs. A fixed height pins all three to the same
+     pixel value regardless of what each one happens to contain. */
   height: 2.375rem;
   padding: 0.5rem 0.75rem;
   background: var(--bg-elevated);
@@ -362,17 +363,10 @@ body.is-resizing-deploy .deploy-resizer {
 }
 
 /* Variables: one <fieldset class="deploy-vars-role"> per checked role that declares any (see
-   role_vars.py, index.html's syncRoleVariables()). Lives under the credentials fields inside
-   .deploy-target and is the one part of it that actually flexes to fill remaining space --
-   see .deploy-target below. */
-.deploy-vars {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  margin-top: 0.5rem;
-  border-top: 1px solid var(--bg-inset);
-  padding-top: 0.65rem;
-}
+   role_vars.py, index.html's syncRoleVariables()). Listed directly after the "Host" fieldset
+   (the IP/port/credentials fields, using this same fieldset+legend styling -- see index.html)
+   inside .deploy-target's single scrolling area -- no layout of its own needed here, each
+   .deploy-vars-role fieldset (Host included) already carries its own bottom margin. */
 .deploy-vars-role {
   border: 1px solid var(--bg-inset);
   border-radius: 4px;
@@ -404,17 +398,14 @@ body.is-resizing-deploy .deploy-resizer {
 }
 
 .deploy-target {
-  /* Now the flexible one: grows to fill whatever .deploy-selected above (fixed-height, see
-     there) doesn't use. Its own direct fields (the hidden OS input, IP/port, username/
-     password) stay their natural size as normal flex items; .deploy-vars is the one child
-     that actually flexes (flex: 1 1 auto, see above) and scrolls internally -- overflow:
-     hidden here (rather than overflow-y: auto) is what keeps the fixed fields always visible
-     instead of the whole section scrolling together. */
+  /* The flexible one in the column: grows to fill whatever .deploy-selected above
+     (fixed-height, see there) doesn't use. A single scrolling area for its whole contents --
+     the "Host" fieldset (IP/port/credentials) and every role-variables fieldset after it
+     scroll together as one list, rather than the credentials fields staying pinned above an
+     independently-scrolling Variables area. */
   flex: 1 1 auto;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
   padding: 0.75rem 0.85rem;
 }
 
@@ -506,9 +497,10 @@ body.is-resizing-deploy .deploy-resizer {
   min-width: 0;
 }
 
-/* Status area, pinned directly above the Apply button (outside .deploy-target's scrollable
-   area, like the Apply button itself) -- "Status: <dot> <text>", driven by index.html's
-   checkTargetPort()/resetPortStatusDot(). */
+/* Status row, pinned at the bottom of the column (outside .deploy-target's scrollable area) --
+   "Status: <dot> <text>", driven by index.html's checkTargetPort()/resetPortStatusDot() --
+   plus the Apply button, pushed to the row's right edge via margin-left: auto on the button
+   itself rather than a separate wrapper. */
 .target-status {
   display: flex;
   align-items: center;
@@ -556,12 +548,13 @@ body.is-resizing-deploy .deploy-resizer {
   }
 }
 
-/* Lives in the Deploy column's .panel-header now, next to the h2 -- same slot as the
-   Playbooks/Roles headers' refresh .icon-button, sized to fit that fixed-height row rather
-   than spanning the column's full width like it used to. */
+/* Sits in .target-status, at the far right of that row (margin-left: auto pushes it there,
+   leaving Status/dot/text left-aligned as before) rather than spanning the column's full width
+   like it originally did. */
 .apply-button {
   flex: 0 0 auto;
   width: auto;
+  margin-left: auto;
   padding: 0.3rem 0.9rem;
   background: var(--accent);
   color: var(--accent-fg);
