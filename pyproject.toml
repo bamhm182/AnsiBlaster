@@ -23,6 +23,7 @@ dev = [
     "httpx>=0.28.1",
     "pytest>=8.0",
     "pytest-asyncio>=1.4.0",
+    "pytest-timeout>=2.4.0",
     "ruff>=0.6",
 ]
 
@@ -39,6 +40,16 @@ packages = ["src/ansiblaster"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# Global per-test watchdog: the full suite normally finishes in a few seconds, so 60s is
+# generous headroom, not a tight budget. This exists purely so a hang (like the one that once
+# stuck the GitHub Actions "Run tests" step for 20+ minutes with zero output) fails loudly with
+# a full thread dump (every thread's traceback, via faulthandler -- ansible-runner and its
+# callbacks run on their own background threads, not just the asyncio event loop's) instead of
+# silently consuming the whole job. "signal" (the default on POSIX, which the CI runner and any
+# real dev machine both are) is a bare SIGALRM -- it can interrupt a blocked syscall (e.g. a
+# stuck DNS lookup), unlike the "thread" method, which can only dump-and-report, never actually
+# unblock the offending call.
+timeout = 60
 
 [tool.ruff]
 line-length = 100

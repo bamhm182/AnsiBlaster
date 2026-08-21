@@ -520,7 +520,15 @@ independent without extra process-management code.
   - Check: `uv run ruff check .`
   - Format: `uv run ruff format .`
 - **Tests**: `pytest` (with `pytest-asyncio`, `asyncio_mode = "auto"` so `async def test_...`
-  functions just work) and `httpx` (for FastAPI's `TestClient`).
+  functions just work) and `httpx` (for FastAPI's `TestClient`). `pytest-timeout` sets a global
+  60s-per-test watchdog (`[tool.pytest.ini_options] timeout` in `pyproject.toml`) purely as a
+  CI safety net: the full suite normally runs in a few seconds, so this isn't a tight budget,
+  it's there so a hang fails loudly with a full multi-thread traceback (`ansible-runner` and
+  its callbacks run on their own background threads, not just the asyncio event loop -- see
+  "Job execution model") instead of silently consuming the whole GitHub Actions job the way a
+  since-fixed `check_port()` bug once did (20+ minutes stuck on "Run tests" with no output at
+  all -- see `portcheck.py`'s docstring). If this timeout ever actually fires in CI, the
+  resulting traceback is the way to find out what's really stuck, rather than guessing blind.
   - Full suite: `uv run pytest`
   - Single test: `uv run pytest tests/path/to/test_file.py::test_name`
 
