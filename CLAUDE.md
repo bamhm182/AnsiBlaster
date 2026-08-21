@@ -437,7 +437,8 @@ src/ansiblaster/
 ├── portcheck.py        # check_port(host, port): service-agnostic async TCP connect + a
 │                       # best-effort read of whatever banner the target volunteers unprompted
 │                       # (works for SSH, naturally yields none for WinRM) backing the Deploy
-│                       # column's Status row
+│                       # column's Status row. Times the connect out with asyncio.wait(), not
+│                       # asyncio.wait_for() -- see the docstring for why
 ├── browse.py           # Viewer tab: list_role_files/read_role_file, list_playbook_files/
 │                       # read_playbook_file -- re-validates the role/playbook name and checks
 │                       # every resolved path stays inside its expected base directory
@@ -480,6 +481,22 @@ src/ansiblaster/
   roles/playbooks/artifacts/DB paths — and `make_role`/`make_playbook` helpers).
 - Tests mock `ansible-runner` execution (`monkeypatch.setattr("ansiblaster.jobs.ansible_runner.run_async", ...)`)
   rather than running real playbooks/SSH — no live target host is required to run the test suite.
+- **The full suite must pass unattended in GitHub Actions**, not just locally — nothing may depend on
+  interactive input, a locally-cached resource, or network behavior that only happens to be fast on a
+  given machine. `test_portcheck.py`/`test_routes_target.py` come closest to violating this: they do
+  exercise real sockets (a loopback listener the test itself starts, an unused local port, a
+  non-routable documentation-range IP, an unresolvable `.invalid` hostname), but only ever against
+  `127.0.0.1` or addresses guaranteed to fail — none of it depends on a real remote host answering.
+  That's still worth watching if `portcheck.py` changes: `check_port()` uses `asyncio.wait()`
+  rather than `asyncio.wait_for()` specifically so `connect_timeout` is enforced even when
+  hostname resolution (a blocking `getaddrinfo()` call `asyncio` runs in a worker thread) is slow to
+  fail — `wait_for()` waits for a cancelled task to actually unwind before raising, which a
+  still-running thread-pool call can't be made to do, so on a run where DNS resolution for a bad
+  hostname is unusually slow, `wait_for()` would silently block past its own timeout instead of
+  enforcing it. That exact pattern (a CI job hanging indefinitely on "Run tests" with no failure
+  and no useful log output, since nothing ever raises) is worth recognizing on sight if it recurs
+  elsewhere: any `wait_for()`/`shield()` around a coroutine that bottoms out in a thread-pool call
+  (DNS resolution, blocking file I/O via `run_in_executor`, etc.) has the same gap.
 
 ### Job execution model
 
