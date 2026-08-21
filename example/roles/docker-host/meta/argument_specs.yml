@@ -1,0 +1,13 @@
+---
+# See apache/meta/argument_specs.yml's comment for what this file is/why it's here.
+argument_specs:
+  main:
+    short_description: Install Docker and enable the connecting user to use it
+    options:
+      docker_package_name:
+        type: str
+        default: docker.io
+        description: >-
+          APT package to install for Docker. Defaults to Ubuntu's own docker.io package to
+          avoid needing an extra apt_key/apt_repository step for Docker's upstream repo (see
+          the comment in tasks/main.yml).

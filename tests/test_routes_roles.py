@@ -21,6 +21,25 @@ def test_list_roles_empty(client):
     assert "No roles found" in response.text
 
 
+def test_list_roles_bakes_data_vars_attribute_from_argument_specs(client, tmp_path):
+    make_role(tmp_path, "apache", argument_specs={"apache_listen_port": {"type": "int"}})
+
+    response = client.get("/roles")
+
+    assert response.status_code == 200
+    assert "data-vars=" in response.text
+    assert "apache_listen_port" in response.text
+
+
+def test_role_with_no_argument_specs_gets_empty_data_vars(client, tmp_path):
+    make_role(tmp_path, "docker-host")
+
+    response = client.get("/roles")
+
+    assert response.status_code == 200
+    assert "data-vars='{}'" in response.text
+
+
 def test_role_files_lists_the_roles_files(client, tmp_path):
     make_role(tmp_path, "docker-host")
 

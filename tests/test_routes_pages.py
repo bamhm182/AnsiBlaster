@@ -15,6 +15,16 @@ def test_index_lists_discovered_roles_and_playbooks(client, tmp_path):
     assert 'name="target_os"' in response.text
 
 
+def test_index_bakes_data_vars_attribute_from_argument_specs(client, tmp_path):
+    make_role(tmp_path, "apache", argument_specs={"apache_listen_port": {"type": "int"}})
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "data-vars=" in response.text
+    assert "apache_listen_port" in response.text
+
+
 def test_index_shows_empty_hints_when_nothing_configured(client):
     response = client.get("/")
 

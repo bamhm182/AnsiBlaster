@@ -59,6 +59,18 @@
           <p class="empty-hint">No roles selected.</p>
         </div>
 
+        <div
+          class="deploy-resizer"
+          id="deploy-resizer"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize selected-roles list"
+        ></div>
+
+        <!-- A single scrollable area for the whole target form: a "Host" fieldset (IP/port/
+             credentials) followed by one fieldset per checked role that declares variables
+             (see below) -- both use the same .deploy-vars-role fieldset+legend styling so the
+             two read as one consistent list rather than two visually different sections. -->
         <div class="deploy-target">
           <!-- Which OS this run targets is now inferred entirely from the port preset picked
                below (22/SSH -> linux, 5985/WinRM -> windows) rather than surfaced as its own
@@ -66,47 +78,63 @@
                field of its own. -->
           <input type="hidden" name="target_os" id="target-os-select" value="linux">
 
-          <div class="field-row field-row-host">
-            <label class="field-host">
-              IP address
-              <input type="text" name="target_host" id="target-host-input" required>
-            </label>
-            <label class="field-port">
-              Port
-              <!-- One visually merged control, not two separate fields: the preset picks the
-                   protocol (and, via data-os, the OS -- see applyPortPreset() below) while the
-                   number input next to it holds the actual port, pre-filled from the preset but
-                   still freely editable (e.g. a non-standard SSH port). -->
-              <div class="port-field-group">
-                <select
-                  id="target-port-preset"
-                  class="port-preset-select"
-                  aria-label="Port preset"
-                  onchange="applyPortPreset(this)"
-                >
-                  <option value="{{ default_ports['linux'] }}" data-os="linux" selected>SSH</option>
-                  <option value="{{ default_ports['windows'] }}" data-os="windows">WinRM</option>
-                  <option value="{{ windows_https_port }}" data-os="windows">WinRM (Secure)</option>
-                  <option value="{{ default_ports['windows_psrp'] }}" data-os="windows_psrp">PSRP</option>
-                  <option value="{{ windows_https_port }}" data-os="windows_psrp">PSRP (Secure)</option>
-                </select>
-                <input type="number" name="target_port" id="target-port-input"
-                       value="{{ default_ports['linux'] }}" required>
-              </div>
-            </label>
-          </div>
+          <fieldset class="deploy-vars-role">
+            <legend>Host</legend>
 
-          <div class="field-row field-row-creds">
-            <label>
-              Username
-              <input type="text" name="target_user" id="target-user-input"
-                     value="{{ defaults.ssh.username }}" required>
-            </label>
-            <label>
-              Password
-              <input type="password" name="target_password" id="target-password-input"
-                     value="{{ defaults.ssh.password }}">
-            </label>
+            <div class="field-row field-row-host">
+              <label class="field-host">
+                IP address
+                <input type="text" name="target_host" id="target-host-input" required>
+              </label>
+              <label class="field-port">
+                Port
+                <!-- One visually merged control, not two separate fields: the preset picks the
+                     protocol (and, via data-os, the OS -- see applyPortPreset() below) while the
+                     number input next to it holds the actual port, pre-filled from the preset but
+                     still freely editable (e.g. a non-standard SSH port). -->
+                <div class="port-field-group">
+                  <select
+                    id="target-port-preset"
+                    class="port-preset-select"
+                    aria-label="Port preset"
+                    onchange="applyPortPreset(this)"
+                  >
+                    <option value="{{ default_ports['linux'] }}" data-os="linux" selected>SSH</option>
+                    <option value="{{ default_ports['windows'] }}" data-os="windows">WinRM</option>
+                    <option value="{{ windows_https_port }}" data-os="windows">WinRM (Secure)</option>
+                    <option value="{{ default_ports['windows_psrp'] }}" data-os="windows_psrp">PSRP</option>
+                    <option value="{{ windows_https_port }}" data-os="windows_psrp">PSRP (Secure)</option>
+                  </select>
+                  <input type="number" name="target_port" id="target-port-input"
+                         value="{{ default_ports['linux'] }}" required>
+                </div>
+              </label>
+            </div>
+
+            <div class="field-row field-row-creds">
+              <label>
+                Username
+                <input type="text" name="target_user" id="target-user-input"
+                       value="{{ defaults.ssh.username }}" required>
+              </label>
+              <label>
+                Password
+                <input type="password" name="target_password" id="target-password-input"
+                       value="{{ defaults.ssh.password }}">
+              </label>
+            </div>
+          </fieldset>
+
+          <!-- Variables: one fieldset per checked role that declares any (via
+               meta/argument_specs.yml -- see role_vars.py and CLAUDE.md's "Role variables"
+               section), rebuilt wholesale by syncRoleVariables() alongside
+               selected-roles-summary above. Listed directly under the Host fieldset, in the
+               same scrolling area -- not a separately-scrolling section of its own. Inputs
+               live inside #apply-form's own DOM subtree (unlike role checkboxes, which need
+               the form="apply-form" trick only because they live in a different column/panel),
+               so they're picked up by FormData(applyForm) with no extra wiring. -->
+          <div class="deploy-vars" id="deploy-vars-summary" aria-label="Role variables">
+            <p class="empty-hint">No variables for the selected roles.</p>
           </div>
         </div>
 
@@ -123,9 +151,8 @@
           >&#8635;</button>
           <span id="port-status-dot" class="port-status-dot" aria-hidden="true"></span>
           <span id="port-status-text" class="port-status-text">Not checked yet.</span>
+          <button type="submit" class="apply-button" id="apply-button">Apply</button>
         </div>
-
-        <button type="submit" class="apply-button" id="apply-button">Apply</button>
       </form>
     </section>
   </div>
@@ -302,6 +329,7 @@
     const playbookCheckbox = document.getElementById("playbook-" + button.dataset.playbook);
     if (playbookCheckbox) playbookCheckbox.checked = true;
     syncSelectedRolesSummary();
+    syncRoleVariables();
   }
 
   function escapeHtml(text) {
@@ -353,8 +381,107 @@
 
   // Delegated so it keeps working after GET /roles refreshes #role-list's contents.
   document.addEventListener("change", (evt) => {
-    if (evt.target.matches('input[name="roles"]')) syncSelectedRolesSummary();
+    if (evt.target.matches('input[name="roles"]')) {
+      syncSelectedRolesSummary();
+      syncRoleVariables();
+    }
   });
+
+  // ---------------------------------------------------------------------
+  // Variables area: one <fieldset> per checked role that declares variables via
+  // meta/argument_specs.yml (baked onto its checkbox as data-vars by role_list.html -- see
+  // CLAUDE.md's "Role variables" section). Field names are vars[<role>][<var_name>], read
+  // server-side by routes/runs.py's create_run(). Rebuilt wholesale on every role-selection
+  // change, same "read-only reflection of the Roles column" approach as
+  // syncSelectedRolesSummary() -- unchecking a role simply drops its fieldset (and with it,
+  // its name="vars[...]" inputs), so nothing stale reaches FormData(applyForm).
+  // ---------------------------------------------------------------------
+
+  // Snapshots whatever's currently typed into the Variables area before a rebuild, so
+  // checking a *second* role (which re-runs this whole sync) doesn't blow away input already
+  // in the first role's fields. Always yields plain strings (DOM input values always are),
+  // even for a checkbox ("true"/"false") -- buildVarRow() below normalizes against this same
+  // shape whether the value came from here or from a restored run's already-typed JSON (see
+  // loadRunIntoDeploy()).
+  function collectCurrentVarValues() {
+    const values = {};
+    document.querySelectorAll('#deploy-vars-summary [name^="vars["]').forEach((el) => {
+      const match = el.name.match(/^vars\[([^\]]+)\]\[([^\]]+)\]$/);
+      if (!match) return;
+      const [, role, varName] = match;
+      (values[role] ??= {})[varName] = el.type === "checkbox" ? String(el.checked) : el.value;
+    });
+    return values;
+  }
+
+  function buildVarRow(role, varName, spec, previousValue) {
+    const row = document.createElement("div");
+    row.className = "deploy-var-row";
+
+    const label = document.createElement("label");
+    label.append(varName);
+    if (spec.required) {
+      const marker = document.createElement("span");
+      marker.className = "deploy-var-required";
+      marker.textContent = " *";
+      marker.setAttribute("aria-hidden", "true");
+      label.appendChild(marker);
+    }
+    if (spec.description) label.title = spec.description;
+
+    const name = `vars[${role}][${varName}]`;
+    let input;
+    if (spec.type === "bool") {
+      input = document.createElement("input");
+      input.type = "checkbox";
+      const has = previousValue !== undefined;
+      input.checked = has ? (previousValue === true || previousValue === "true") : Boolean(spec.default);
+    } else {
+      input = document.createElement("input");
+      input.type = spec.type === "int" || spec.type === "float" ? "number" : "text";
+      if (spec.type === "float") input.step = "any";
+      const has = previousValue !== undefined && previousValue !== null;
+      const fallback = spec.default === null || spec.default === undefined ? "" : String(spec.default);
+      input.value = has ? String(previousValue) : fallback;
+    }
+    input.name = name;
+    input.id = `var-${role}-${varName}`;
+    if (spec.required && (spec.default === null || spec.default === undefined)) {
+      input.required = true;
+    }
+    label.setAttribute("for", input.id);
+
+    row.append(label, input);
+    return row;
+  }
+
+  function syncRoleVariables(overrideValues) {
+    const previous = overrideValues || collectCurrentVarValues();
+    const checkedWithVars = Array.from(document.querySelectorAll('input[name="roles"]:checked'))
+      .map((el) => ({ role: el.value, vars: JSON.parse(el.dataset.vars || "{}") }))
+      .filter((entry) => Object.keys(entry.vars).length > 0);
+
+    const container = document.getElementById("deploy-vars-summary");
+    if (checkedWithVars.length === 0) {
+      container.innerHTML = '<p class="empty-hint">No variables for the selected roles.</p>';
+      return;
+    }
+
+    const frag = document.createDocumentFragment();
+    checkedWithVars.forEach(({ role, vars }) => {
+      const fieldset = document.createElement("fieldset");
+      fieldset.className = "deploy-vars-role";
+      const legend = document.createElement("legend");
+      legend.textContent = role;
+      fieldset.appendChild(legend);
+      Object.entries(vars).forEach(([varName, spec]) => {
+        const previousValue = previous[role] ? previous[role][varName] : undefined;
+        fieldset.appendChild(buildVarRow(role, varName, spec, previousValue));
+      });
+      frag.appendChild(fieldset);
+    });
+    container.replaceChildren(frag);
+  }
 
   // Delegated since syncSelectedRolesSummary() replaces #selected-roles-summary's contents
   // wholesale on every change.
@@ -679,6 +806,13 @@
       if (checkbox) checkbox.checked = true;
     });
     syncSelectedRolesSummary();
+    // A run's submitted variable values are never persisted (see CLAUDE.md's "Role variables
+    // (argument_specs)" section) -- there's nothing to restore, so this resets the Variables
+    // area to each re-checked role's declared default (or blank), the same as freshly
+    // checking that role. Passing {} rather than omitting the argument matters: omitting it
+    // would fall back to collectCurrentVarValues(), which reads whatever's currently sitting
+    // in the live form -- stale values from before this reload, not what we want here.
+    syncRoleVariables({});
   }
 
   // ---------------------------------------------------------------------
@@ -750,7 +884,7 @@
     resizer.addEventListener("mousedown", (evt) => {
       if (panel.classList.contains("collapsed")) return;
       evt.preventDefault();
-      document.body.classList.add("is-resizing");
+      document.body.classList.add("is-resizing", "is-resizing-panel");
 
       const onMouseMove = (moveEvt) => {
         const maxHeight = window.innerHeight * 0.9;
@@ -758,7 +892,43 @@
         body.style.height = height + "px";
       };
       const onMouseUp = () => {
-        document.body.classList.remove("is-resizing");
+        document.body.classList.remove("is-resizing", "is-resizing-panel");
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    });
+  })();
+
+  // ---------------------------------------------------------------------
+  // Drag-resize the selected-roles summary via #deploy-resizer -- same technique as
+  // #panel-resizer above, just measured from the top of the column instead of the bottom of
+  // the viewport (since #selected-roles-summary grows downward from a fixed top edge, right
+  // below the panel header, rather than upward from a fixed bottom edge). #selected-roles-
+  // summary gets a fixed inline height set directly from the drag; .deploy-target below it is
+  // flex:1, so it grows/shrinks to absorb whatever space the drag leaves -- and within
+  // .deploy-target, the Variables area is the one part that's actually flexible (see
+  // style.css), so this is really what resizes the Variables area itself.
+  // ---------------------------------------------------------------------
+  (function setupDeployResizer() {
+    const resizer = document.getElementById("deploy-resizer");
+    const summary = document.getElementById("selected-roles-summary");
+    const deployPanel = document.querySelector(".panel-deploy");
+    const MIN_HEIGHT = 48;
+
+    resizer.addEventListener("mousedown", (evt) => {
+      evt.preventDefault();
+      document.body.classList.add("is-resizing", "is-resizing-deploy");
+      const top = summary.getBoundingClientRect().top;
+
+      const onMouseMove = (moveEvt) => {
+        const maxHeight = deployPanel.getBoundingClientRect().height * 0.6;
+        const height = Math.min(maxHeight, Math.max(MIN_HEIGHT, moveEvt.clientY - top));
+        summary.style.height = height + "px";
+      };
+      const onMouseUp = () => {
+        document.body.classList.remove("is-resizing", "is-resizing-deploy");
         document.removeEventListener("mousemove", onMouseMove);
         document.removeEventListener("mouseup", onMouseUp);
       };
@@ -768,6 +938,7 @@
   })();
 
   syncSelectedRolesSummary();
+  syncRoleVariables();
 </script>
 
 {% endblock %}

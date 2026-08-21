@@ -5,6 +5,22 @@
     state: present
     update_cache: true
 
+- name: Set Apache's listen port
+  # apache_listen_port comes from meta/argument_specs.yml -- fillable/autofilled in the
+  # Deploy column's Variables area (see CLAUDE.md's "Role variables (argument_specs)" section).
+  ansible.builtin.lineinfile:
+    path: /etc/apache2/ports.conf
+    regexp: "^Listen "
+    line: "Listen {{ apache_listen_port }}"
+  notify: Restart Apache
+
+- name: Set the default site's ServerAdmin
+  ansible.builtin.lineinfile:
+    path: /etc/apache2/sites-available/000-default.conf
+    regexp: "^\\s*ServerAdmin "
+    line: "    ServerAdmin {{ apache_server_admin }}"
+  notify: Restart Apache
+
 - name: Ensure Apache is enabled and running
   ansible.builtin.service:
     name: apache2

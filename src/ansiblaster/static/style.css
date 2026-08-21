@@ -313,10 +313,13 @@ main {
 }
 
 .deploy-selected {
-  /* Grows to take up whatever space .deploy-target below doesn't need for its own (fixed-ish)
-     content -- the roles list is the one of these two that can get arbitrarily long, so it's
-     the one that should claim the extra room rather than splitting a fixed percentage. */
-  flex: 1 1 auto;
+  /* Deliberately small and fixed-height (not flex-grow) -- the Variables area below, inside
+     .deploy-target, is the thing that should get the most room now (see .deploy-target and
+     .deploy-vars below). Height is still just a default: #deploy-resizer (index.html's
+     setupDeployResizer()) drags it directly, the same technique the bottom log panel's own
+     #panel-resizer uses. */
+  flex: 0 0 auto;
+  height: 6rem;
   min-height: 0;
   overflow-y: auto;
   border-bottom: 1px solid var(--bg-inset);
@@ -347,11 +350,76 @@ main {
   white-space: nowrap;
 }
 
+/* Drag handle between .deploy-selected and .deploy-target -- mousedown/move/up logic lives in
+   index.html's setupDeployResizer(), same pattern as .panel-resizer below it. */
+.deploy-resizer {
+  flex: 0 0 5px;
+  background: var(--bg-inset);
+  cursor: row-resize;
+}
+.deploy-resizer:hover,
+body.is-resizing-deploy .deploy-resizer {
+  background: var(--accent);
+}
+
+/* Variables: one <fieldset class="deploy-vars-role"> per checked role that declares any (see
+   role_vars.py, index.html's syncRoleVariables()). Listed directly after the "Host" fieldset
+   (the IP/port/credentials fields, using this same fieldset+legend styling -- see index.html)
+   inside .deploy-target's single scrolling area -- no layout of its own needed here, each
+   .deploy-vars-role fieldset (Host included) already carries its own bottom margin. */
+.deploy-vars-role {
+  /* --bg-inset (the usual border color elsewhere) all but disappears against this section's
+     background -- --selection (already used for hover/active rows) is a step lighter, giving
+     the fieldset a visible edge without it reading as a highlighted/active element. */
+  border: 1px solid var(--selection);
+  border-radius: 4px;
+  margin: 0 0 0.65rem;
+  /* Symmetric top/bottom -- the last row inside (.field-row or .deploy-var-row) has its own
+     bottom margin zeroed out below, so this is the only bottom spacing before the border,
+     matching the top spacing before the first row. */
+  padding: 0.5rem 0.65rem;
+}
+.deploy-vars-role:last-child {
+  margin-bottom: 0;
+}
+.deploy-vars-role legend {
+  padding: 0 0.35rem;
+  color: var(--cyan);
+  font-size: 0.8rem;
+}
+/* .field-row (Host) and .deploy-var-row (per-variable) are the two kinds of "row" that can
+   appear inside a .deploy-vars-role fieldset -- both get the same between-row gap, and both
+   drop it on their last row so it doesn't stack with the fieldset's own bottom padding above. */
+.field-row:last-child,
+.deploy-var-row:last-child {
+  margin-bottom: 0;
+}
+.deploy-var-row {
+  margin-bottom: 0.65rem;
+}
+.deploy-var-row label {
+  display: block;
+  margin-bottom: 0.65rem;
+  font-size: 0.78rem;
+  color: var(--fg-muted);
+}
+.deploy-var-row input[type="checkbox"] {
+  display: inline-block;
+  width: auto;
+  margin: 0 0 0 0.4rem;
+  accent-color: var(--accent);
+}
+.deploy-var-required {
+  color: var(--red);
+}
+
 .deploy-target {
-  /* Sized to fit its own content (IP/port/username/password) rather than claiming a fixed
-     share of the column -- see .deploy-selected above, which takes whatever's left over.
-     overflow-y stays as a safety net for a viewport too short to fit even this. */
-  flex: 0 0 auto;
+  /* The flexible one in the column: grows to fill whatever .deploy-selected above
+     (fixed-height, see there) doesn't use. A single scrolling area for its whole contents --
+     the "Host" fieldset (IP/port/credentials) and every role-variables fieldset after it
+     scroll together as one list, rather than the credentials fields staying pinned above an
+     independently-scrolling Variables area. */
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   padding: 0.75rem 0.85rem;
@@ -387,7 +455,8 @@ main {
 }
 
 .deploy-target input,
-.deploy-target select {
+.deploy-target select,
+.deploy-var-row input:not([type="checkbox"]) {
   display: block;
   width: 100%;
   margin-top: 0.25rem;
@@ -398,7 +467,8 @@ main {
   color: var(--fg);
 }
 .deploy-target input:focus,
-.deploy-target select:focus {
+.deploy-target select:focus,
+.deploy-var-row input:focus {
   outline: none;
   border-color: var(--accent);
 }
@@ -443,9 +513,10 @@ main {
   min-width: 0;
 }
 
-/* Status area, pinned directly above the Apply button (outside .deploy-target's scrollable
-   area, like the Apply button itself) -- "Status: <dot> <text>", driven by index.html's
-   checkTargetPort()/resetPortStatusDot(). */
+/* Status row, pinned at the bottom of the column (outside .deploy-target's scrollable area) --
+   "Status: <dot> <text>", driven by index.html's checkTargetPort()/resetPortStatusDot() --
+   plus the Apply button, pushed to the row's right edge via margin-left: auto on the button
+   itself rather than a separate wrapper. */
 .target-status {
   display: flex;
   align-items: center;
@@ -493,18 +564,23 @@ main {
   }
 }
 
+/* Sits in .target-status, at the far right of that row (margin-left: auto pushes it there,
+   leaving Status/dot/text left-aligned as before) rather than spanning the column's full width
+   like it originally did. */
 .apply-button {
   flex: 0 0 auto;
-  width: 100%;
-  padding: 0.75rem;
+  width: auto;
+  margin-left: auto;
+  padding: 0.3rem 0.9rem;
   background: var(--accent);
   color: var(--accent-fg);
   border: none;
   font-weight: 700;
-  font-size: 0.85rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   cursor: pointer;
+  border-radius: 3px;
 }
 .apply-button:hover {
   background: var(--pink);
@@ -534,7 +610,7 @@ main {
   cursor: row-resize;
 }
 .panel-resizer:hover,
-body.is-resizing .panel-resizer {
+body.is-resizing-panel .panel-resizer {
   background: var(--accent);
 }
 .panel-resizer:has(+ .bottom-panel.collapsed) {
@@ -542,7 +618,10 @@ body.is-resizing .panel-resizer {
   pointer-events: none;
 }
 
-/* Dragging: suppress text selection / iframe-style pointer weirdness for the duration. */
+/* Dragging (either resizer): suppress text selection / iframe-style pointer weirdness for the
+   duration. is-resizing-panel/is-resizing-deploy (added alongside this, see index.html) pick
+   out which resizer bar itself should highlight -- both resizers use this shared class just
+   for the generic cursor/user-select effect. */
 body.is-resizing {
   cursor: row-resize;
   user-select: none;

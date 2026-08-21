@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 
 from ansiblaster.app import app
@@ -43,10 +44,17 @@ def client(make_client):
         yield test_client
 
 
-def make_role(tmp_path, name: str) -> None:
+def make_role(tmp_path, name: str, *, argument_specs: dict | None = None) -> None:
     role_dir = tmp_path / "roles" / name / "tasks"
     role_dir.mkdir(parents=True)
     (role_dir / "main.yml").write_text("---\n- name: noop\n  ansible.builtin.debug:\n")
+
+    if argument_specs is not None:
+        meta_dir = tmp_path / "roles" / name / "meta"
+        meta_dir.mkdir(parents=True)
+        (meta_dir / "argument_specs.yml").write_text(
+            yaml.safe_dump({"argument_specs": {"main": {"options": argument_specs}}})
+        )
 
 
 def make_playbook(tmp_path, name: str, roles: list[str]) -> None:

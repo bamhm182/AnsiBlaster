@@ -3,20 +3,113 @@
 from __future__ import annotations
 
 import html
+import re
 from collections.abc import AsyncIterator
+from typing import Any
 
+import yaml
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 from sqlalchemy.orm import Session, sessionmaker
 
 from ansiblaster.db import session_scope
-from ansiblaster.deps import get_job_manager, get_session_factory, templates
+from ansiblaster.deps import get_app_settings, get_job_manager, get_session_factory, templates
 from ansiblaster.jobs import STREAM_DONE, JobManager, stdout_log_path
 from ansiblaster.models import Run, TargetOS
+from ansiblaster.role_vars import discover_role_variables
+from ansiblaster.settings import Settings
 
 router = APIRouter(prefix="/runs")
 
 _RECENT_RUNS_LIMIT = 50
+
+# Matches the vars[<role>][<var_name>] form-field naming convention used by index.html's
+# Variables area (see CLAUDE.md's "Role variables (argument_specs)" section).
+_VAR_KEY_RE = re.compile(r"^vars\[([^\]]+)\]\[([^\]]+)\]$")
+
+_BOOL_TRUE = {"true", "1", "yes", "on"}
+_BOOL_FALSE = {"false", "0", "no", "off"}
+
+
+class _VariableError(ValueError):
+    """A user-facing 400 message for a bad/missing role variable submission -- deliberately
+    *not* the "never raise, missing/bad data = no data" leniency role_vars.py/roles.py/
+    playbooks.py use when reading config off disk. This is validating what a user just typed
+    in before launching a privileged job against a real host, closer in spirit to the existing
+    target_port int-cast 400 below than to that discovery-time leniency.
+    """
+
+
+def _parse_role_variables(form) -> dict[str, dict[str, str]]:
+    """{role: {var_name: raw_string}} pulled out of vars[<role>][<var_name>] form keys.
+
+    Values are always plain strings here -- type coercion against each selected role's
+    argument_specs happens separately in _coerce_role_variables, once we know which roles (and
+    therefore which specs) are actually in play.
+    """
+    variables: dict[str, dict[str, str]] = {}
+    for key, value in form.multi_items():
+        match = _VAR_KEY_RE.match(key)
+        if not match:
+            continue
+        role, var_name = match.groups()
+        variables.setdefault(role, {})[var_name] = str(value)
+    return variables
+
+
+def _coerce_value(role: str, var_name: str, value: str, var_type: str) -> Any:
+    try:
+        if var_type == "bool":
+            lowered = value.strip().lower()
+            if lowered in _BOOL_TRUE:
+                return True
+            if lowered in _BOOL_FALSE:
+                return False
+            raise ValueError
+        if var_type == "int":
+            return int(value)
+        if var_type == "float":
+            return float(value)
+        if var_type in ("list", "dict"):
+            # YAML is a JSON superset, so a user typing ["a", "b"] or {"key": "val"} into a
+            # plain text box parses correctly -- but only accept it if it actually produced
+            # the right shape, not e.g. a bare string that happens to also be valid YAML.
+            parsed = yaml.safe_load(value)
+            expected = list if var_type == "list" else dict
+            if not isinstance(parsed, expected):
+                raise ValueError
+            return parsed
+        return value  # str and anything unrecognized: pass through as-is
+    except (ValueError, yaml.YAMLError) as exc:
+        raise _VariableError(f"{role}: '{var_name}' must be a valid {var_type}.") from exc
+
+
+def _coerce_role_variables(
+    raw: dict[str, dict[str, str]],
+    specs: dict[str, dict[str, dict[str, Any]]],
+    roles: list[str],
+) -> dict[str, dict[str, Any]]:
+    """Validate/type-coerce the submitted vars against each *selected* role's own
+    argument_specs. Iterates only over `roles` (and each role's own specs), so a stray
+    vars[<role-not-selected>][...] field is silently ignored -- same lenient-toward-unknown-
+    fields precedent as create_run() already applies to a stray playbooks[] field.
+    """
+    result: dict[str, dict[str, Any]] = {}
+    for role in roles:
+        role_vars: dict[str, Any] = {}
+        for var_name, spec in specs.get(role, {}).items():
+            value = raw.get(role, {}).get(var_name, "")
+            if value == "":
+                if spec["required"]:
+                    raise _VariableError(f"{role}: '{var_name}' is required.")
+                # Optional + blank -> omit entirely, so the role's own argument_specs default
+                # (applied by Ansible itself at role invocation) wins, rather than being
+                # overridden by an explicit empty string.
+                continue
+            role_vars[var_name] = _coerce_value(role, var_name, value, spec["type"])
+        if role_vars:
+            result[role] = role_vars
+    return result
 
 
 @router.get("")
@@ -32,6 +125,7 @@ async def create_run(
     request: Request,
     job_manager: JobManager = Depends(get_job_manager),
     session_factory: sessionmaker[Session] = Depends(get_session_factory),
+    settings: Settings = Depends(get_app_settings),
 ):
     form = await request.form()
 
@@ -54,6 +148,12 @@ async def create_run(
         return PlainTextResponse("Target host and username are required.", status_code=400)
 
     try:
+        role_specs = discover_role_variables(settings.ansible.roles_path, roles)
+        variables = _coerce_role_variables(_parse_role_variables(form), role_specs, roles)
+    except _VariableError as exc:
+        return PlainTextResponse(str(exc), status_code=400)
+
+    try:
         run = job_manager.start_job(
             target_os=target_os,
             target_host=target_host,
@@ -61,6 +161,7 @@ async def create_run(
             target_user=target_user,
             target_password=target_password,
             roles=roles,
+            variables=variables,
         )
     except ValueError as exc:
         return PlainTextResponse(str(exc), status_code=400)
