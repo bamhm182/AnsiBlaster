@@ -27,8 +27,16 @@ async def test_check_port_reports_banner_when_server_speaks_first():
         assert result.open is True
         assert result.banner == "SSH-2.0-OpenSSH_10.2"
     finally:
+        # Deliberately just close(), not `await server.wait_closed()`: Python 3.12 changed
+        # wait_closed() to also wait for connections the server already accepted to finish
+        # (3.11 and earlier didn't) -- our handle() above is still inside its 10s sleep at
+        # this point ("stay connected until the test tears the server down"), so on 3.12
+        # awaiting wait_closed() here blocks on that sleep instead of returning immediately,
+        # which is what actually hung this suite in CI (Python 3.12 runner) while always
+        # passing locally (Python 3.11). Not awaiting it is fine: pytest-asyncio gives each
+        # test its own event loop, so there's nothing left to leak into the next test either
+        # way -- we just don't need confirmation that the close finished before moving on.
         server.close()
-        await server.wait_closed()
 
 
 async def test_check_port_open_with_no_banner_when_server_stays_silent():
@@ -42,8 +50,7 @@ async def test_check_port_open_with_no_banner_when_server_stays_silent():
         assert result.open is True
         assert result.banner is None
     finally:
-        server.close()
-        await server.wait_closed()
+        server.close()  # see the previous test's comment for why this isn't awaited
 
 
 async def test_check_port_closed_when_connection_is_refused():
