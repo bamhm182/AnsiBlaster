@@ -19,7 +19,11 @@ A small web UI for running Ansible roles against a single target host on demand:
 2. The user checks one or more roles in the UI, either individually or by clicking a **playbook**
    — a named preset (e.g. "LAMP") that checks a predefined set of roles (e.g. `apache`, `mysql`,
    `php`) in one click. Playbook clicks only *add* checks; the user can still uncheck individual
-   roles or combine/stack multiple playbooks and manual picks before applying.
+   roles or combine/stack multiple playbooks and manual picks before applying. A role can also
+   declare its own fillable **variables** (name, type, optional default, whether it's required)
+   via a standard `meta/argument_specs.yml` — checking that role surfaces them in the Deploy
+   column's Variables area, any declared default autofilled (see "Role variables
+   (argument_specs)" below).
 3. The user fills in target connection details: IP address, port, username, password. There is
    no separate Linux/Windows picker — the OS is implied by which port preset is chosen (see
    "Backend & UI" below) — and username/password fields are pre-filled from configured
@@ -62,11 +66,21 @@ logs) is persisted so past runs can be reviewed later.
   checked (`syncSelectedRolesSummary()`, delegated off `change` events so it survives a
   role-list refresh) — unchecking happens back in the Roles column, not in this summary, though
   each entry also gets its own eyeball button (same as Roles/Playbooks, see "Viewer tab" below)
-  so a selected role's files can be checked without leaving the Deploy column. `flex: 1 1 auto`
-  on this summary vs. `flex: 0 0 auto` on the target form below it means the summary claims
-  whatever space the target form (a handful of fixed fields) doesn't need, rather than the two
+  so a selected role's files can be checked without leaving the Deploy column. Directly below
+  that summary sits the **Variables** area (`.deploy-vars`/`#deploy-vars-summary`) — one
+  `<fieldset>` per checked role that declares any variables via `meta/argument_specs.yml` (see
+  "Role variables (argument_specs)" below), built the same "read-only reflection of the Roles
+  column, rebuilt wholesale on every selection change" way as the summary above it
+  (`syncRoleVariables()`, called from the same delegated `change` listener plus every other
+  place `syncSelectedRolesSummary()` is called — `applyPlaybook()`, the page's initial load,
+  and `loadRunIntoDeploy()`). Unlike the role checkboxes (which live in a different column and
+  need the `form="apply-form"` attribute trick), the Variables area's inputs are built directly
+  inside `#apply-form`'s own DOM subtree, so `FormData(applyForm)` picks them up with no extra
+  wiring. `flex: 1 1 0` on both this summary and the Variables area (vs. `flex: 0 0 auto` on the
+  target form below them) means the two split whatever space the target form (a handful of
+  fixed fields) doesn't need, each independently scrollable, rather than any of the three
   splitting a fixed percentage of the column regardless of content. The Apply button is pinned
-  outside the column's scrollable areas, `flex: 0 0 auto` after those two sections. There is no
+  outside the column's scrollable areas, `flex: 0 0 auto` after those sections. There is no
   visible Linux/Windows picker in the target form: a small "SSH"/"WinRM"/"WinRM (Secure)"/
   "PSRP"/"PSRP (Secure)" `<select>` is merged with the port number input into one bordered
   control (`.port-field-group` in `style.css` — the select and input themselves are
@@ -167,6 +181,61 @@ logs) is persisted so past runs can be reviewed later.
   just the roles that were actually applied, the same regardless of whether they came from a
   playbook, manual picks, or both.
 
+### Role variables (argument_specs)
+
+- A role can declare fillable variables via `meta/argument_specs.yml` (or `.yaml`) — Ansible's
+  own standard for declaring a role's inputs (ansible-core 2.11+, normally consumed by
+  `ansible-doc`/`ansible-lint`), under `argument_specs.main.options`. Each option can carry
+  `type`, `default`, `required`, and `description`. This was chosen over reading
+  `defaults/main.yml` directly because that file has no way to express "this variable exists
+  but has no default and must be filled in" — everything in it already has a value.
+- `role_vars.py`'s `discover_role_variables(roles_path, roles)` parses this per role, returning
+  `{role: {var_name: {"type", "default", "required", "description"}}}`. A role with no
+  argument_specs file, unreadable/malformed YAML, or the wrong shape simply has no entry in the
+  result (never an empty `{}`) — mirrors `roles.py`/`playbooks.py`'s "missing/bad data on disk =
+  no data, never raise" philosophy, since this reads config files, not user input. Exposing
+  variables in the Deploy column is opt-in per role: a role with no argument_specs file just
+  shows nothing in the Variables area.
+- Both `GET /roles` (`routes/roles.py`) and `GET /` (`routes/pages.py`) call
+  `discover_role_variables()` alongside `discover_roles()` and pass the result to
+  `role_list.html`, which bakes each role's variable spec into a `data-vars` attribute on its
+  checkbox (`{{ (role_variables.get(role) or {}) | tojson }}`) — the same "bake it into HTML,
+  zero extra round trips" precedent playbook buttons already use for their roles list. See
+  "Backend & UI" above for how the client renders this into the Variables area.
+- Field naming is `vars[<role>][<var_name>]`, parsed server-side in `routes/runs.py`'s
+  `create_run()` via a small bracket-notation regex (`_parse_role_variables()`), then validated/
+  type-coerced against the *selected* roles' own argument_specs (`_coerce_role_variables()`,
+  `_coerce_value()`) — `bool` from `true/1/yes/on` and `false/0/no/off` (case-insensitive),
+  `int`/`float` via a direct cast, `list`/`dict` via `yaml.safe_load()` plus an `isinstance`
+  check (YAML is a JSON superset, so `["a", "b"]` or `{"key": "val"}` typed into a plain text
+  box parses correctly), anything else (`str`, unrecognized types) passed through as-is. A
+  blank + required variable is a **400** (`"<role>: '<var_name>' is required."`); a blank +
+  optional variable is omitted entirely (so the role's own argument_specs default — applied by
+  Ansible itself at role invocation — wins, rather than being overridden by an explicit empty
+  string); a bad cast (e.g. non-numeric text for an `int`) is also a 400. This is deliberately
+  **stricter** than the "never raise" discovery philosophy above — validating what a user just
+  typed in before launching a privileged job against a real host is a different concern than
+  reading config off disk, closer in spirit to the existing `target_port` int-cast 400. A stray
+  `vars[<role-not-selected>][...]` field is silently ignored (only `roles`, and each of their
+  own specs, are iterated) — same lenient-toward-unknown-fields precedent as a stray
+  `playbooks[]` field.
+- A role entry in the generated playbook's `roles:` list becomes `{"role": name, "vars": {...}}`
+  only when that role actually has variables supplied (`jobs.py`'s `_build_playbook()`) — kept
+  as a plain string otherwise, so the common no-vars case stays exactly as minimal as before. A
+  mixed list is expected and fine: `playbooks.py`'s own `_role_name_from_entry()` already reads
+  this exact dict shape (currently discarding `vars:`) when *parsing* a playbook file's `roles:`
+  list, confirming it's the right Ansible-native shape rather than an invention here.
+- The submitted variables are persisted on the `Run` row (`variables` column, see "Data model &
+  routes" below) as an immutable snapshot, the same "what was actually submitted, not a live
+  reference" treatment as `roles`. Unlike the target password, this **is** persisted — a
+  variable named e.g. `mysql_root_password` would be stored in run history in the clear with no
+  redaction. That's a known, deliberately unsolved gap in this iteration, not something silently
+  mitigated; a real fix (name-sniffing heuristics, a non-standard schema extension, etc.) is a
+  separate decision. "Load into Deploy" (see "Live logs" below) restores a past run's saved
+  variable values from `run_detail.html`'s `data-variables` attribute — already-typed JSON, not
+  the plain strings the live form produces, which `index.html`'s `buildVarRow()` normalizes
+  against either source the same way.
+
 ### Ansible execution
 
 - Ansible is invoked through the **`ansible-runner`** Python library, not by shelling out to
@@ -258,9 +327,11 @@ logs) is persisted so past runs can be reviewed later.
 - **"Load into Deploy"**, in `run_detail.html`'s header (where the redundant close button used
   to live), re-populates the Deploy column's target form and role checkboxes from that run via
   `loadRunIntoDeploy(runId)`, reading the target fields back off `run_detail.html`'s own
-  `data-target-os`/`data-target-port`/`data-target-user`/`data-roles` attributes. It replaces
-  the current role selection outright (unlike a playbook click, which only ever adds checks) so
-  it exactly mirrors that run, and reflects the run's OS/connection in the port preset dropdown
+  `data-target-os`/`data-target-port`/`data-target-user`/`data-roles`/`data-variables`
+  attributes. It replaces the current role selection outright (unlike a playbook click, which
+  only ever adds checks) so it exactly mirrors that run — including its Variables area, restored
+  from `data-variables` (see "Role variables (argument_specs)" above) — and reflects the run's
+  OS/connection in the port preset dropdown
   too, matched by `data-os` *and* port together first (falling back to a `data-os`-only match,
   then to no selection) since WinRM/PSRP's plain and "(Secure)" presets now share a `data-os`.
   The run's actual password was never persisted (see the `runs` table's password note below),
@@ -314,6 +385,7 @@ logs) is persisted so past runs can be reviewed later.
 | `target_port` | `Integer`, not null | Default `22` for `linux`, `5985` for `windows`/`windows_psrp` (chosen by the form/route, not the DB) |
 | `target_user` | `String`, not null | |
 | `roles` | `JSON` (list[str]), not null | Snapshot of selected role names at submit time (regardless of whether they came from a playbook, manual picks, or both — playbooks themselves aren't tracked, see "Playbooks (role presets)" above) |
+| `variables` | `JSON` (dict[str, dict[str, Any]]), not null, default `{}` | Snapshot of role variables actually applied at submit time (role → var name → typed value) — see "Role variables (argument_specs)" above. Unlike the target password below, this **is** persisted; avoid role variables for real secrets as currently designed |
 | `status` | `String`/enum, not null, default `pending` | `pending → running → successful \| failed \| canceled \| error` |
 | `return_code` | `Integer`, nullable | ansible-runner's `rc` once finished |
 | `created_at` | `DateTime`, not null | |
@@ -333,6 +405,13 @@ what was selected at submit time, not a live reference. There's no equivalent co
 playbooks: they're a client-side-only convenience for checking roles (see "Playbooks (role
 presets)" above), not something a run's history needs to remember.
 
+There's no migration framework in this project (`db.py`'s `init_db()` is a plain
+`Base.metadata.create_all()`, which only creates missing *tables*, not missing *columns* on an
+already-existing one) — an existing SQLite file from before the `variables` column existed
+won't gain it automatically, and every insert will fail until that DB file is recreated. A
+pre-existing limitation of this project's schema-management approach in general, not something
+newly introduced by this column specifically.
+
 ### Routes
 
 | Method & path | Purpose |
@@ -345,7 +424,7 @@ presets)" above), not something a run's history needs to remember.
 | `GET /playbooks/{name}/files` | HTMX fragment — Viewer tab file list for one playbook (always one entry, its own file) |
 | `GET /playbooks/{name}/file` | HTMX fragment — that file's read-only content (`path` query param) |
 | `GET /runs` | HTMX fragment/page — run history list |
-| `POST /runs` | Create a run (`roles[]`, `target_os`, `target_host`, `target_port`, `target_user`, `target_password`); inserts a `pending` row, launches the ansible-runner job async, returns the new run's detail panel |
+| `POST /runs` | Create a run (`roles[]`, `target_os`, `target_host`, `target_port`, `target_user`, `target_password`, `vars[<role>][<var_name>]` for any selected role's declared variables); inserts a `pending` row, launches the ansible-runner job async, returns the new run's detail panel |
 | `GET /runs/{job_id}` | Run detail fragment/page — status, target, roles, timestamps, log panel container |
 | `GET /runs/{job_id}/stream` | SSE endpoint — live log lines + status transitions for the job; closes when the run ends |
 | `GET /runs/{job_id}/log` | Full plain-text log — used for replaying a finished run, or backfilling before SSE attaches |
@@ -424,6 +503,9 @@ src/ansiblaster/
 ├── db.py               # SQLAlchemy engine/session factory, declarative Base, init_db()
 ├── models.py           # Run ORM model + RunStatus enum
 ├── roles.py            # Role discovery: scans settings.roles_path, returns valid role names
+├── role_vars.py        # discover_role_variables(roles_path, roles): parses each role's
+│                       # meta/argument_specs.yml into {role: {var_name: {type, default,
+│                       # required, description}}} -- backs the Deploy column's Variables area
 ├── playbooks.py        # Playbook discovery: scans settings.playbooks_path, parses each file's
 │                       # roles: list(s) into {playbook_name: [role_names]}
 ├── inventory.py        # Builds the ephemeral single-host inventory for ansible-runner
@@ -444,15 +526,19 @@ src/ansiblaster/
 │                       # every resolved path stays inside its expected base directory
 ├── routes/
 │   ├── __init__.py     # aggregates routers for app.py to include
-│   ├── pages.py        # GET /
+│   ├── pages.py        # GET / -- also threads discover_role_variables() through to index.html
+│   │                   # alongside discover_roles(), for the Variables area's data-vars
 │   ├── roles.py        # GET /roles fragment (distinct module from top-level roles.py --
 │   │                   # that one discovers roles, this one serves the HTTP fragment), plus
-│   │                   # the Viewer tab's GET /roles/{name}/files and .../file
+│   │                   # the Viewer tab's GET /roles/{name}/files and .../file. Also threads
+│   │                   # discover_role_variables() through, same as pages.py above
 │   ├── playbooks.py    # GET /playbooks fragment (distinct from top-level playbooks.py, same
 │   │                   # naming pattern as roles.py above), plus the Viewer tab's
 │   │                   # GET /playbooks/{name}/files and .../file
 │   ├── runs.py         # POST /runs, GET /runs, GET /runs/{job_id}, GET /runs/{job_id}/stream,
-│   │                   # GET /runs/{job_id}/log, POST /runs/{job_id}/cancel
+│   │                   # GET /runs/{job_id}/log, POST /runs/{job_id}/cancel. POST /runs also
+│   │                   # parses/validates vars[<role>][<var_name>] fields (see "Role variables
+│   │                   # (argument_specs)") -- _parse_role_variables(), _coerce_role_variables()
 │   └── target.py       # GET /target/check-port -- thin JSON wrapper around portcheck.py
 ├── templates/
 │   ├── base.html
@@ -467,18 +553,21 @@ src/ansiblaster/
 │       ├── run_list.html
 │       ├── run_row.html     # single history-list item; opened via a delegated fetch(),
 │       │                   # not hx-get (see "Backend & UI")
-│       └── run_detail.html  # one run's status + log; relocated into a run tab client-side
+│       └── run_detail.html  # one run's status + log; relocated into a run tab client-side.
+│                           # Carries data-variables (alongside data-roles etc.) for "Load
+│                           # into Deploy" to restore a run's saved variable values
 └── static/
     ├── htmx.min.js     # vendored, not CDN — the app must work with no outbound internet access
     └── style.css       # Dracula palette + the 3-column/bottom-panel IDE layout
 ```
 
 - `tests/` mirrors this layout alongside `src/` (not inside the package): `test_roles.py`,
-  `test_playbooks.py`, `test_inventory.py`, `test_jobs.py`, `test_portcheck.py`,
-  `test_browse.py`, `test_routes_pages.py`, `test_routes_roles.py`, `test_routes_playbooks.py`,
-  `test_routes_runs.py`, `test_routes_target.py`, plus a shared
+  `test_role_vars.py`, `test_playbooks.py`, `test_inventory.py`, `test_jobs.py`,
+  `test_portcheck.py`, `test_browse.py`, `test_routes_pages.py`, `test_routes_roles.py`,
+  `test_routes_playbooks.py`, `test_routes_runs.py`, `test_routes_target.py`, plus a shared
   `conftest.py` (the `client` fixture — a `TestClient` wired to per-test tmp_path
-  roles/playbooks/artifacts/DB paths — and `make_role`/`make_playbook` helpers).
+  roles/playbooks/artifacts/DB paths — and `make_role`/`make_playbook` helpers; `make_role`
+  takes an optional `argument_specs=` dict to write a `meta/argument_specs.yml` for it).
 - Tests mock `ansible-runner` execution (`monkeypatch.setattr("ansiblaster.jobs.ansible_runner.run_async", ...)`)
   rather than running real playbooks/SSH — no live target host is required to run the test suite.
 - **The full suite must pass unattended in GitHub Actions**, not just locally — nothing may depend on

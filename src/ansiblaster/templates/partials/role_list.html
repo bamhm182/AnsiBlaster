@@ -2,7 +2,8 @@
   {% for role in roles %}
     <div class="list-item role-item" data-filter-name="{{ role }}">
       <label class="role-label">
-        <input type="checkbox" name="roles" value="{{ role }}" id="role-{{ role }}" form="apply-form">
+        <input type="checkbox" name="roles" value="{{ role }}" id="role-{{ role }}" form="apply-form"
+               data-vars='{{ (role_variables.get(role) or {}) | tojson }}'>
         <span class="list-item-name">{{ role }}</span>
       </label>
       <button

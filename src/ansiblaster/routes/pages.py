@@ -9,6 +9,7 @@ from ansiblaster.deps import get_app_settings, get_session_factory, templates
 from ansiblaster.inventory import DEFAULT_PORTS, WINDOWS_HTTPS_PORT
 from ansiblaster.models import Run
 from ansiblaster.playbooks import discover_playbooks
+from ansiblaster.role_vars import discover_role_variables
 from ansiblaster.roles import discover_roles
 from ansiblaster.settings import Settings
 
@@ -29,11 +30,14 @@ async def index(
         )
         session.expunge_all()  # keep the rows usable in the template after the session closes
 
+    roles = discover_roles(settings.ansible.roles_path)
+
     return templates.TemplateResponse(
         request,
         "index.html",
         {
-            "roles": discover_roles(settings.ansible.roles_path),
+            "roles": roles,
+            "role_variables": discover_role_variables(settings.ansible.roles_path, roles),
             "playbooks": discover_playbooks(settings.ansible.playbooks_path),
             "runs": recent_runs,
             "default_ports": {os_.value: port for os_, port in DEFAULT_PORTS.items()},

@@ -1,0 +1,19 @@
+---
+# Ansible's own role-input declaration format (ansible-core 2.11+) -- read by
+# ansiblaster.role_vars.discover_role_variables() to populate the Deploy column's Variables
+# area once this role is checked (see CLAUDE.md's "Role variables (argument_specs)" section).
+# This is demo content: it exists so `docker compose up`'s first run has something real to
+# show in that area, not just declare-and-ignore -- both variables below are actually
+# templated into tasks/main.yml.
+argument_specs:
+  main:
+    short_description: Install and configure Apache
+    options:
+      apache_listen_port:
+        type: int
+        default: 80
+        description: Port Apache listens on (written into /etc/apache2/ports.conf)
+      apache_server_admin:
+        type: str
+        default: webmaster@localhost
+        description: ServerAdmin email shown on Apache's default error pages

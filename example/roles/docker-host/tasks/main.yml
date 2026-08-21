@@ -1,8 +1,11 @@
 ---
 - name: Install Docker
+  # docker_package_name comes from meta/argument_specs.yml -- fillable/autofilled in the
+  # Deploy column's Variables area (see CLAUDE.md's "Role variables (argument_specs)" section).
+  # Defaults to docker.io, Ubuntu's own repo package -- keeps this example free of an extra
+  # apt_key/apt_repository step to add Docker's official upstream repo.
   ansible.builtin.apt:
-    name: docker.io # Ubuntu's own repo package -- keeps this example free of an extra
-                     # apt_key/apt_repository step to add Docker's official upstream repo
+    name: "{{ docker_package_name }}"
     state: present
     update_cache: true
 

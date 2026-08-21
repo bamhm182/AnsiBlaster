@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ansiblaster.browse import NotFound, list_role_files, read_role_file
 from ansiblaster.deps import get_app_settings, templates
+from ansiblaster.role_vars import discover_role_variables
 from ansiblaster.roles import discover_roles
 from ansiblaster.settings import Settings
 
@@ -20,7 +21,12 @@ router = APIRouter()
 @router.get("/roles")
 async def list_roles(request: Request, settings: Settings = Depends(get_app_settings)):
     roles = discover_roles(settings.ansible.roles_path)
-    return templates.TemplateResponse(request, "partials/role_list.html", {"roles": roles})
+    role_variables = discover_role_variables(settings.ansible.roles_path, roles)
+    return templates.TemplateResponse(
+        request,
+        "partials/role_list.html",
+        {"roles": roles, "role_variables": role_variables},
+    )
 
 
 @router.get("/roles/{name}/files")

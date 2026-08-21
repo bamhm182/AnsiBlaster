@@ -16,6 +16,13 @@ empty checklist.
   service, and adds the connecting user to the `docker` group (skipped for `root`, which
   already has full access; takes effect on that user's next login).
 
+`apache` and `docker-host` also each carry a `meta/argument_specs.yml`, so checking either one
+demonstrates the Deploy column's **Variables** area (see CLAUDE.md's "Role variables
+(argument_specs)" section) — `apache_listen_port`/`apache_server_admin` and
+`docker_package_name` are real inputs to their role's tasks, not just decorative. Note that,
+unlike the target connection password, any value typed into a role variable *is* persisted in
+run history — avoid using this mechanism for real secrets as currently designed.
+
 This is demo content, not production-ready: no firewall rules, no TLS, MySQL is left with its
 package-default (unset/prompt-based) root credentials, and Docker/CLI tools are installed with
 no further hardening — set those up yourself before using this against anything real. Point

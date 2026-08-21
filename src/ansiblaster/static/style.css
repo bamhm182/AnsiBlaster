@@ -313,10 +313,12 @@ main {
 }
 
 .deploy-selected {
-  /* Grows to take up whatever space .deploy-target below doesn't need for its own (fixed-ish)
-     content -- the roles list is the one of these two that can get arbitrarily long, so it's
-     the one that should claim the extra room rather than splitting a fixed percentage. */
-  flex: 1 1 auto;
+  /* Splits available space evenly with .deploy-vars below (each independently scrollable) --
+     both can get arbitrarily long (many roles; many roles x many variables each), unlike
+     .deploy-target's fixed-ish handful of fields, so these two are the pair that should claim
+     whatever room .deploy-target doesn't need rather than either splitting a fixed percentage
+     of the column on its own. */
+  flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
   border-bottom: 1px solid var(--bg-inset);
@@ -347,10 +349,50 @@ main {
   white-space: nowrap;
 }
 
+/* Variables: one <fieldset class="deploy-vars-role"> per checked role that declares any (see
+   role_vars.py, index.html's syncRoleVariables()). Sits between .deploy-selected and
+   .deploy-target and shares .deploy-selected's flex-grow treatment -- see the comment there. */
+.deploy-vars {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--bg-inset);
+  padding: 0.5rem 0.85rem;
+}
+.deploy-vars-role {
+  border: 1px solid var(--bg-inset);
+  border-radius: 4px;
+  margin: 0 0 0.65rem;
+  padding: 0.5rem 0.65rem 0.15rem;
+}
+.deploy-vars-role:last-child {
+  margin-bottom: 0;
+}
+.deploy-vars-role legend {
+  padding: 0 0.35rem;
+  color: var(--cyan);
+  font-size: 0.8rem;
+}
+.deploy-var-row label {
+  display: block;
+  margin-bottom: 0.65rem;
+  font-size: 0.78rem;
+  color: var(--fg-muted);
+}
+.deploy-var-row input[type="checkbox"] {
+  display: inline-block;
+  width: auto;
+  margin: 0 0 0 0.4rem;
+  accent-color: var(--accent);
+}
+.deploy-var-required {
+  color: var(--red);
+}
+
 .deploy-target {
   /* Sized to fit its own content (IP/port/username/password) rather than claiming a fixed
-     share of the column -- see .deploy-selected above, which takes whatever's left over.
-     overflow-y stays as a safety net for a viewport too short to fit even this. */
+     share of the column -- see .deploy-selected/.deploy-vars above, which split whatever's
+     left over. overflow-y stays as a safety net for a viewport too short to fit even this. */
   flex: 0 0 auto;
   min-height: 0;
   overflow-y: auto;
@@ -387,7 +429,8 @@ main {
 }
 
 .deploy-target input,
-.deploy-target select {
+.deploy-target select,
+.deploy-var-row input:not([type="checkbox"]) {
   display: block;
   width: 100%;
   margin-top: 0.25rem;
@@ -398,7 +441,8 @@ main {
   color: var(--fg);
 }
 .deploy-target input:focus,
-.deploy-target select:focus {
+.deploy-target select:focus,
+.deploy-var-row input:focus {
   outline: none;
   border-color: var(--accent);
 }

@@ -128,6 +128,117 @@ def test_create_run_requires_host_and_user(client, monkeypatch):
     assert response.status_code == 400
 
 
+def test_create_run_parses_vars_bracket_notation(client, tmp_path, monkeypatch):
+    make_role(tmp_path, "apache", argument_specs={"apache_listen_port": {"type": "int"}})
+    calls: list[dict] = []
+    monkeypatch.setattr("ansiblaster.jobs.ansible_runner.run_async", _fake_run_async(calls))
+
+    response = client.post(
+        "/runs",
+        data=_base_form(roles=["apache"], **{"vars[apache][apache_listen_port]": "8080"}),
+    )
+
+    assert response.status_code == 201
+    run = _only_run(client)
+    assert run.variables == {"apache": {"apache_listen_port": 8080}}
+    [play] = calls[0]["playbook"]
+    assert play["roles"] == [{"role": "apache", "vars": {"apache_listen_port": 8080}}]
+
+
+def test_create_run_coerces_bool_and_float(client, tmp_path, monkeypatch):
+    make_role(
+        tmp_path,
+        "apache",
+        argument_specs={
+            "enable_tls": {"type": "bool"},
+            "load_factor": {"type": "float"},
+        },
+    )
+    monkeypatch.setattr("ansiblaster.jobs.ansible_runner.run_async", _fake_run_async([]))
+
+    response = client.post(
+        "/runs",
+        data=_base_form(
+            roles=["apache"],
+            **{
+                "vars[apache][enable_tls]": "true",
+                "vars[apache][load_factor]": "1.5",
+            },
+        ),
+    )
+
+    assert response.status_code == 201
+    run = _only_run(client)
+    assert run.variables == {"apache": {"enable_tls": True, "load_factor": 1.5}}
+
+
+def test_create_run_rejects_missing_required_variable_with_400(client, tmp_path, monkeypatch):
+    make_role(tmp_path, "apache", argument_specs={"admin_email": {"type": "str", "required": True}})
+    monkeypatch.setattr("ansiblaster.jobs.ansible_runner.run_async", _fake_run_async([]))
+
+    response = client.post("/runs", data=_base_form(roles=["apache"]))
+
+    assert response.status_code == 400
+    assert "admin_email" in response.text
+
+
+def test_create_run_rejects_invalid_int_value_with_400(client, tmp_path, monkeypatch):
+    make_role(tmp_path, "apache", argument_specs={"apache_listen_port": {"type": "int"}})
+    monkeypatch.setattr("ansiblaster.jobs.ansible_runner.run_async", _fake_run_async([]))
+
+    response = client.post(
+        "/runs",
+        data=_base_form(roles=["apache"], **{"vars[apache][apache_listen_port]": "not-a-number"}),
+    )
+
+    assert response.status_code == 400
+
+
+def test_create_run_omits_blank_optional_variable_rather_than_storing_empty_string(
+    client, tmp_path, monkeypatch
+):
+    make_role(
+        tmp_path, "apache", argument_specs={"apache_listen_port": {"type": "int", "default": 80}}
+    )
+    monkeypatch.setattr("ansiblaster.jobs.ansible_runner.run_async", _fake_run_async([]))
+
+    response = client.post(
+        "/runs", data=_base_form(roles=["apache"], **{"vars[apache][apache_listen_port]": ""})
+    )
+
+    assert response.status_code == 201
+    run = _only_run(client)
+    assert run.variables == {}
+
+
+def test_create_run_ignores_vars_for_a_role_not_in_roles_list(client, tmp_path, monkeypatch):
+    make_role(tmp_path, "apache", argument_specs={"apache_listen_port": {"type": "int"}})
+    make_role(tmp_path, "mysql")
+    monkeypatch.setattr("ansiblaster.jobs.ansible_runner.run_async", _fake_run_async([]))
+
+    response = client.post(
+        "/runs",
+        data=_base_form(roles=["mysql"], **{"vars[apache][apache_listen_port]": "8080"}),
+    )
+
+    assert response.status_code == 201
+    run = _only_run(client)
+    assert run.variables == {}
+
+
+def test_create_run_variables_defaults_to_empty_dict_for_role_with_no_argument_specs(
+    client, tmp_path, monkeypatch
+):
+    make_role(tmp_path, "docker-host")
+    monkeypatch.setattr("ansiblaster.jobs.ansible_runner.run_async", _fake_run_async([]))
+
+    response = client.post("/runs", data=_base_form(roles=["docker-host"]))
+
+    assert response.status_code == 201
+    run = _only_run(client)
+    assert run.variables == {}
+
+
 def test_run_detail_not_found(client):
     response = client.get("/runs/does-not-exist")
 

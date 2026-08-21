@@ -59,6 +59,17 @@
           <p class="empty-hint">No roles selected.</p>
         </div>
 
+        <!-- Variables: one fieldset per checked role that declares any (via
+             meta/argument_specs.yml -- see role_vars.py and CLAUDE.md's "Role variables"
+             section), rebuilt wholesale by syncRoleVariables() alongside
+             selected-roles-summary above. Inputs live inside #apply-form's own DOM subtree
+             (unlike role checkboxes, which need the form="apply-form" trick only because they
+             live in a different column/panel), so they're picked up by FormData(applyForm)
+             with no extra wiring. -->
+        <div class="deploy-vars" id="deploy-vars-summary" aria-label="Role variables">
+          <p class="empty-hint">No variables for the selected roles.</p>
+        </div>
+
         <div class="deploy-target">
           <!-- Which OS this run targets is now inferred entirely from the port preset picked
                below (22/SSH -> linux, 5985/WinRM -> windows) rather than surfaced as its own
@@ -302,6 +313,7 @@
     const playbookCheckbox = document.getElementById("playbook-" + button.dataset.playbook);
     if (playbookCheckbox) playbookCheckbox.checked = true;
     syncSelectedRolesSummary();
+    syncRoleVariables();
   }
 
   function escapeHtml(text) {
@@ -353,8 +365,107 @@
 
   // Delegated so it keeps working after GET /roles refreshes #role-list's contents.
   document.addEventListener("change", (evt) => {
-    if (evt.target.matches('input[name="roles"]')) syncSelectedRolesSummary();
+    if (evt.target.matches('input[name="roles"]')) {
+      syncSelectedRolesSummary();
+      syncRoleVariables();
+    }
   });
+
+  // ---------------------------------------------------------------------
+  // Variables area: one <fieldset> per checked role that declares variables via
+  // meta/argument_specs.yml (baked onto its checkbox as data-vars by role_list.html -- see
+  // CLAUDE.md's "Role variables" section). Field names are vars[<role>][<var_name>], read
+  // server-side by routes/runs.py's create_run(). Rebuilt wholesale on every role-selection
+  // change, same "read-only reflection of the Roles column" approach as
+  // syncSelectedRolesSummary() -- unchecking a role simply drops its fieldset (and with it,
+  // its name="vars[...]" inputs), so nothing stale reaches FormData(applyForm).
+  // ---------------------------------------------------------------------
+
+  // Snapshots whatever's currently typed into the Variables area before a rebuild, so
+  // checking a *second* role (which re-runs this whole sync) doesn't blow away input already
+  // in the first role's fields. Always yields plain strings (DOM input values always are),
+  // even for a checkbox ("true"/"false") -- buildVarRow() below normalizes against this same
+  // shape whether the value came from here or from a restored run's already-typed JSON (see
+  // loadRunIntoDeploy()).
+  function collectCurrentVarValues() {
+    const values = {};
+    document.querySelectorAll('#deploy-vars-summary [name^="vars["]').forEach((el) => {
+      const match = el.name.match(/^vars\[([^\]]+)\]\[([^\]]+)\]$/);
+      if (!match) return;
+      const [, role, varName] = match;
+      (values[role] ??= {})[varName] = el.type === "checkbox" ? String(el.checked) : el.value;
+    });
+    return values;
+  }
+
+  function buildVarRow(role, varName, spec, previousValue) {
+    const row = document.createElement("div");
+    row.className = "deploy-var-row";
+
+    const label = document.createElement("label");
+    label.append(varName);
+    if (spec.required) {
+      const marker = document.createElement("span");
+      marker.className = "deploy-var-required";
+      marker.textContent = " *";
+      marker.setAttribute("aria-hidden", "true");
+      label.appendChild(marker);
+    }
+    if (spec.description) label.title = spec.description;
+
+    const name = `vars[${role}][${varName}]`;
+    let input;
+    if (spec.type === "bool") {
+      input = document.createElement("input");
+      input.type = "checkbox";
+      const has = previousValue !== undefined;
+      input.checked = has ? (previousValue === true || previousValue === "true") : Boolean(spec.default);
+    } else {
+      input = document.createElement("input");
+      input.type = spec.type === "int" || spec.type === "float" ? "number" : "text";
+      if (spec.type === "float") input.step = "any";
+      const has = previousValue !== undefined && previousValue !== null;
+      const fallback = spec.default === null || spec.default === undefined ? "" : String(spec.default);
+      input.value = has ? String(previousValue) : fallback;
+    }
+    input.name = name;
+    input.id = `var-${role}-${varName}`;
+    if (spec.required && (spec.default === null || spec.default === undefined)) {
+      input.required = true;
+    }
+    label.setAttribute("for", input.id);
+
+    row.append(label, input);
+    return row;
+  }
+
+  function syncRoleVariables(overrideValues) {
+    const previous = overrideValues || collectCurrentVarValues();
+    const checkedWithVars = Array.from(document.querySelectorAll('input[name="roles"]:checked'))
+      .map((el) => ({ role: el.value, vars: JSON.parse(el.dataset.vars || "{}") }))
+      .filter((entry) => Object.keys(entry.vars).length > 0);
+
+    const container = document.getElementById("deploy-vars-summary");
+    if (checkedWithVars.length === 0) {
+      container.innerHTML = '<p class="empty-hint">No variables for the selected roles.</p>';
+      return;
+    }
+
+    const frag = document.createDocumentFragment();
+    checkedWithVars.forEach(({ role, vars }) => {
+      const fieldset = document.createElement("fieldset");
+      fieldset.className = "deploy-vars-role";
+      const legend = document.createElement("legend");
+      legend.textContent = role;
+      fieldset.appendChild(legend);
+      Object.entries(vars).forEach(([varName, spec]) => {
+        const previousValue = previous[role] ? previous[role][varName] : undefined;
+        fieldset.appendChild(buildVarRow(role, varName, spec, previousValue));
+      });
+      frag.appendChild(fieldset);
+    });
+    container.replaceChildren(frag);
+  }
 
   // Delegated since syncSelectedRolesSummary() replaces #selected-roles-summary's contents
   // wholesale on every change.
@@ -679,6 +790,10 @@
       if (checkbox) checkbox.checked = true;
     });
     syncSelectedRolesSummary();
+    // Restores this run's actual saved variable values (already-typed JSON, not the plain
+    // strings collectCurrentVarValues() would produce -- buildVarRow() normalizes both the
+    // same way) rather than falling back to each variable's declared default.
+    syncRoleVariables(JSON.parse(detail.dataset.variables || "{}"));
   }
 
   // ---------------------------------------------------------------------
@@ -768,6 +883,7 @@
   })();
 
   syncSelectedRolesSummary();
+  syncRoleVariables();
 </script>
 
 {% endblock %}

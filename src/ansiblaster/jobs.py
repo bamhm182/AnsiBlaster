@@ -77,6 +77,7 @@ class JobManager:
         target_user: str,
         target_password: str,
         roles: list[str],
+        variables: dict[str, dict[str, Any]] | None = None,
     ) -> Run:
         """Create the Run row and launch its ansible-runner job. Returns the new Run.
 
@@ -87,6 +88,7 @@ class JobManager:
         if not roles:
             raise ValueError("At least one role must be selected to start a run.")
 
+        variables = variables or {}
         loop = asyncio.get_running_loop()
 
         with session_scope(self._session_factory) as session:
@@ -96,6 +98,7 @@ class JobManager:
                 target_port=target_port,
                 target_user=target_user,
                 roles=list(roles),
+                variables=variables,
             )
             session.add(run)
             session.flush()
@@ -130,7 +133,7 @@ class JobManager:
             thread, runner = ansible_runner.run_async(
                 private_data_dir=private_data_dir,
                 ident=job_id,
-                playbook=_build_playbook(roles, target_os),
+                playbook=_build_playbook(roles, target_os, variables),
                 inventory=build_inventory(
                     target_os=target_os,
                     target_host=target_host,
@@ -215,15 +218,27 @@ def stdout_log_path(run: Run) -> Path:
     return Path(run.artifact_dir) / "artifacts" / run.id / "stdout"
 
 
-def _build_playbook(roles: list[str], target_os: TargetOS) -> list[dict[str, Any]]:
+def _build_playbook(
+    roles: list[str], target_os: TargetOS, variables: dict[str, dict[str, Any]]
+) -> list[dict[str, Any]]:
     """The ephemeral playbook applying the selected roles to the single generated host.
 
     become is only enabled for Linux targets (see inventory.py's ansible_become_password
     note) -- Windows targets (either connection method) are expected to connect as an
     already-administrative account, and Ansible's become defaults (sudo) don't apply to
     WinRM/PSRP connections anyway.
+
+    A role entry becomes {"role": name, "vars": {...}} only when that role actually has
+    variables supplied (see CLAUDE.md's "Role variables (argument_specs)" section) -- kept as
+    a plain string otherwise, so the common no-vars case stays exactly as minimal as before.
+    A mixed list (some plain strings, some dicts) is expected and fine: playbooks.py's own
+    _role_name_from_entry() already reads this exact dict shape when *parsing* a playbook
+    file's roles: list, confirming it's the right Ansible-native shape here too.
     """
-    play: dict[str, Any] = {"hosts": "all", "roles": list(roles)}
+    role_entries: list[Any] = [
+        {"role": role, "vars": variables[role]} if variables.get(role) else role for role in roles
+    ]
+    play: dict[str, Any] = {"hosts": "all", "roles": role_entries}
     if target_os is TargetOS.LINUX:
         play["become"] = True
     return [play]
