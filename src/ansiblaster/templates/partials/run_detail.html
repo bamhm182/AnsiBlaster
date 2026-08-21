@@ -8,7 +8,6 @@
   data-target-port="{{ run.target_port }}"
   data-target-user="{{ run.target_user }}"
   data-roles="{{ run.roles | tojson }}"
-  data-variables="{{ run.variables | tojson }}"
   data-status="{{ run.status.value }}"
   data-active="{{ 'true' if is_active else 'false' }}"
 >
@@ -28,19 +27,6 @@
 
     <dt>Roles</dt>
     <dd>{{ run.roles | join(", ") }}</dd>
-
-    {% if run.variables %}
-      <dt>Variables</dt>
-      <dd>
-        <ul class="run-detail-vars">
-          {% for role, role_vars in run.variables.items() %}
-            {% for name, value in role_vars.items() %}
-              <li>{{ role }}.{{ name }} = {{ value }}</li>
-            {% endfor %}
-          {% endfor %}
-        </ul>
-      </dd>
-    {% endif %}
 
     <dt>Status</dt>
     <dd class="status">{{ run.status.value }}</dd>

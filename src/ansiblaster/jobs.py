@@ -92,13 +92,15 @@ class JobManager:
         loop = asyncio.get_running_loop()
 
         with session_scope(self._session_factory) as session:
+            # variables is deliberately not stored on the Run row -- it's only ever used below
+            # to build this one job's playbook (_build_playbook()), never persisted or restored
+            # (see CLAUDE.md's "Role variables (argument_specs)" section).
             run = Run(
                 target_os=target_os,
                 target_host=target_host,
                 target_port=target_port,
                 target_user=target_user,
                 roles=list(roles),
-                variables=variables,
             )
             session.add(run)
             session.flush()

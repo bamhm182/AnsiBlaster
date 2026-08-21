@@ -19,9 +19,9 @@ empty checklist.
 `apache` and `docker-host` also each carry a `meta/argument_specs.yml`, so checking either one
 demonstrates the Deploy column's **Variables** area (see CLAUDE.md's "Role variables
 (argument_specs)" section) — `apache_listen_port`/`apache_server_admin` and
-`docker_package_name` are real inputs to their role's tasks, not just decorative. Note that,
-unlike the target connection password, any value typed into a role variable *is* persisted in
-run history — avoid using this mechanism for real secrets as currently designed.
+`docker_package_name` are real inputs to their role's tasks, not just decorative. Like the
+target connection password, a value typed into a role variable is never persisted — it's used
+only to build that one run's playbook.
 
 This is demo content, not production-ready: no firewall rules, no TLS, MySQL is left with its
 package-default (unset/prompt-based) root credentials, and Docker/CLI tools are installed with

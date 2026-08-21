@@ -8,7 +8,6 @@ from __future__ import annotations
 import enum
 import uuid
 from datetime import UTC, datetime
-from typing import Any
 
 from sqlalchemy import JSON, DateTime, Enum, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -67,15 +66,6 @@ class Run(Base):
     # individually or via a playbook preset -- playbooks themselves aren't tracked here, only
     # what they expanded to (see CLAUDE.md's "Playbooks (role presets)" section).
     roles: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-
-    # Snapshot of the role variables actually applied at submit time (role -> var name ->
-    # typed value), empty for a role with no meta/argument_specs.yml or with none of its
-    # variables filled in. Like `roles`, this is an immutable record of what was submitted,
-    # not a live reference to that role's current argument_specs (which could change on disk
-    # after the run) -- see CLAUDE.md's "Role variables (argument_specs)" section. Unlike the
-    # target password, this *is* persisted: a variable named e.g. "mysql_root_password" would
-    # be stored here in the clear with no redaction. That's a known gap, not solved here.
-    variables: Mapped[dict[str, dict[str, Any]]] = mapped_column(JSON, nullable=False, default=dict)
 
     status: Mapped[RunStatus] = mapped_column(
         Enum(RunStatus), nullable=False, default=RunStatus.PENDING

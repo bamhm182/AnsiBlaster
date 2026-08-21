@@ -790,10 +790,13 @@
       if (checkbox) checkbox.checked = true;
     });
     syncSelectedRolesSummary();
-    // Restores this run's actual saved variable values (already-typed JSON, not the plain
-    // strings collectCurrentVarValues() would produce -- buildVarRow() normalizes both the
-    // same way) rather than falling back to each variable's declared default.
-    syncRoleVariables(JSON.parse(detail.dataset.variables || "{}"));
+    // A run's submitted variable values are never persisted (see CLAUDE.md's "Role variables
+    // (argument_specs)" section) -- there's nothing to restore, so this resets the Variables
+    // area to each re-checked role's declared default (or blank), the same as freshly
+    // checking that role. Passing {} rather than omitting the argument matters: omitting it
+    // would fall back to collectCurrentVarValues(), which reads whatever's currently sitting
+    // in the live form -- stale values from before this reload, not what we want here.
+    syncRoleVariables({});
   }
 
   // ---------------------------------------------------------------------

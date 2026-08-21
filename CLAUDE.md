@@ -225,16 +225,16 @@ logs) is persisted so past runs can be reviewed later.
   mixed list is expected and fine: `playbooks.py`'s own `_role_name_from_entry()` already reads
   this exact dict shape (currently discarding `vars:`) when *parsing* a playbook file's `roles:`
   list, confirming it's the right Ansible-native shape rather than an invention here.
-- The submitted variables are persisted on the `Run` row (`variables` column, see "Data model &
-  routes" below) as an immutable snapshot, the same "what was actually submitted, not a live
-  reference" treatment as `roles`. Unlike the target password, this **is** persisted — a
-  variable named e.g. `mysql_root_password` would be stored in run history in the clear with no
-  redaction. That's a known, deliberately unsolved gap in this iteration, not something silently
-  mitigated; a real fix (name-sniffing heuristics, a non-standard schema extension, etc.) is a
-  separate decision. "Load into Deploy" (see "Live logs" below) restores a past run's saved
-  variable values from `run_detail.html`'s `data-variables` attribute — already-typed JSON, not
-  the plain strings the live form produces, which `index.html`'s `buildVarRow()` normalizes
-  against either source the same way.
+- Submitted variables are **not** persisted anywhere — `create_run()` passes the parsed/coerced
+  `variables` dict straight into `job_manager.start_job(..., variables=variables)`, which uses
+  it only to build that one job's ephemeral playbook (`jobs.py`'s `_build_playbook()`); the
+  `Run` row itself carries no `variables` column. Same treatment as the target password (see
+  the `runs` table note below), and for the same reason: a variable named e.g.
+  `mysql_root_password` typed into the Variables area should never end up sitting in run
+  history in the clear. "Load into Deploy" (see "Live logs" below) therefore has nothing to
+  restore — it resets the Variables area to each re-checked role's declared default (or blank),
+  the same as freshly checking that role, rather than reproducing whatever was actually
+  submitted last time.
 
 ### Ansible execution
 
@@ -327,18 +327,19 @@ logs) is persisted so past runs can be reviewed later.
 - **"Load into Deploy"**, in `run_detail.html`'s header (where the redundant close button used
   to live), re-populates the Deploy column's target form and role checkboxes from that run via
   `loadRunIntoDeploy(runId)`, reading the target fields back off `run_detail.html`'s own
-  `data-target-os`/`data-target-port`/`data-target-user`/`data-roles`/`data-variables`
-  attributes. It replaces the current role selection outright (unlike a playbook click, which
-  only ever adds checks) so it exactly mirrors that run — including its Variables area, restored
-  from `data-variables` (see "Role variables (argument_specs)" above) — and reflects the run's
-  OS/connection in the port preset dropdown
-  too, matched by `data-os` *and* port together first (falling back to a `data-os`-only match,
-  then to no selection) since WinRM/PSRP's plain and "(Secure)" presets now share a `data-os`.
-  The run's actual password was never persisted (see the `runs` table's password note below),
-  so there's nothing to restore it to -- but a password the user already *typed* into the form
-  before clicking this is worth more than the configured default, so it's preserved rather than
-  clobbered: `loadRunIntoDeploy()` only lets `applyOsDefaults()`'s default password through when
-  the Password field was empty beforehand, restoring whatever was there otherwise.
+  `data-target-os`/`data-target-port`/`data-target-user`/`data-roles` attributes. It replaces
+  the current role selection outright (unlike a playbook click, which only ever adds checks) so
+  it exactly mirrors that run's roles, and reflects the run's OS/connection in the port preset
+  dropdown too, matched by `data-os` *and* port together first (falling back to a `data-os`-only
+  match, then to no selection) since WinRM/PSRP's plain and "(Secure)" presets now share a
+  `data-os`. Its Variables area is *not* restored from the run — variables are never persisted
+  (see "Role variables (argument_specs)" above) — `syncRoleVariables({})` resets each re-checked
+  role's fields to its declared default (or blank) instead, same as freshly checking that role.
+  The run's actual password was never persisted either (see the `runs` table's password note
+  below), so there's nothing to restore it to -- but a password the user already *typed* into
+  the form before clicking this is worth more than the configured default, so it's preserved
+  rather than clobbered: `loadRunIntoDeploy()` only lets `applyOsDefaults()`'s default password
+  through when the Password field was empty beforehand, restoring whatever was there otherwise.
 - **The History tab refreshes itself** (`refreshHistory()`, a `fetch("/runs")` that replaces
   `#run-list`'s `innerHTML`) rather than requiring the panel's manual "Refresh history" button —
   called right after a run is submitted (so it appears as `pending`/`running` immediately),
@@ -385,7 +386,6 @@ logs) is persisted so past runs can be reviewed later.
 | `target_port` | `Integer`, not null | Default `22` for `linux`, `5985` for `windows`/`windows_psrp` (chosen by the form/route, not the DB) |
 | `target_user` | `String`, not null | |
 | `roles` | `JSON` (list[str]), not null | Snapshot of selected role names at submit time (regardless of whether they came from a playbook, manual picks, or both — playbooks themselves aren't tracked, see "Playbooks (role presets)" above) |
-| `variables` | `JSON` (dict[str, dict[str, Any]]), not null, default `{}` | Snapshot of role variables actually applied at submit time (role → var name → typed value) — see "Role variables (argument_specs)" above. Unlike the target password below, this **is** persisted; avoid role variables for real secrets as currently designed |
 | `status` | `String`/enum, not null, default `pending` | `pending → running → successful \| failed \| canceled \| error` |
 | `return_code` | `Integer`, nullable | ansible-runner's `rc` once finished |
 | `created_at` | `DateTime`, not null | |
@@ -397,7 +397,9 @@ The target's password (SSH or WinRM, whichever the OS calls for) is **never pers
 deliberately not a column on this table, only ever held in memory for the life of the
 request/job (used to build the inventory, then discarded). Re-running a past job means
 re-entering the password, even though the *default* password shown in the form comes from
-config (see "Configuration file" below).
+config (see "Configuration file" below). Submitted role variables (see "Role variables
+(argument_specs)" above) get the same treatment and for the same reason — they're used only to
+build that one job's ephemeral playbook, never written to a column here.
 
 Roles are recorded as a JSON snapshot rather than a normalized association table — roles are
 filesystem-defined, not DB entities, so a run's `roles` column is just an immutable record of
@@ -407,10 +409,9 @@ presets)" above), not something a run's history needs to remember.
 
 There's no migration framework in this project (`db.py`'s `init_db()` is a plain
 `Base.metadata.create_all()`, which only creates missing *tables*, not missing *columns* on an
-already-existing one) — an existing SQLite file from before the `variables` column existed
-won't gain it automatically, and every insert will fail until that DB file is recreated. A
-pre-existing limitation of this project's schema-management approach in general, not something
-newly introduced by this column specifically.
+already-existing one) — a future column added to this table won't be picked up by an existing
+SQLite file without recreating it. A general, pre-existing limitation of this project's
+schema-management approach, avoided so far by keeping the schema stable rather than solved.
 
 ### Routes
 
@@ -553,9 +554,7 @@ src/ansiblaster/
 │       ├── run_list.html
 │       ├── run_row.html     # single history-list item; opened via a delegated fetch(),
 │       │                   # not hx-get (see "Backend & UI")
-│       └── run_detail.html  # one run's status + log; relocated into a run tab client-side.
-│                           # Carries data-variables (alongside data-roles etc.) for "Load
-│                           # into Deploy" to restore a run's saved variable values
+│       └── run_detail.html  # one run's status + log; relocated into a run tab client-side
 └── static/
     ├── htmx.min.js     # vendored, not CDN — the app must work with no outbound internet access
     └── style.css       # Dracula palette + the 3-column/bottom-panel IDE layout

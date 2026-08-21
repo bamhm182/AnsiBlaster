@@ -228,28 +228,6 @@ async def test_start_job_mixes_plain_and_dict_role_entries(tmp_path, monkeypatch
     ]
 
 
-async def test_start_job_persists_variables_snapshot_on_run_row(tmp_path, monkeypatch):
-    calls: list[dict] = []
-    monkeypatch.setattr(
-        "ansiblaster.jobs.ansible_runner.run_async", _fake_run_async_recorder(calls)
-    )
-    manager, session_factory = _make_job_manager(tmp_path)
-
-    run = manager.start_job(
-        target_os=TargetOS.LINUX,
-        target_host="192.168.1.10",
-        target_port=22,
-        target_user="root",
-        target_password="hunter2",
-        roles=["docker-host"],
-        variables={"docker-host": {"docker_version": "24"}},
-    )
-
-    with session_scope(session_factory) as session:
-        fetched = session.get(Run, run.id)
-        assert fetched.variables == {"docker-host": {"docker_version": "24"}}
-
-
 async def test_start_job_windows_playbook_has_no_become(tmp_path, monkeypatch):
     calls: list[dict] = []
     monkeypatch.setattr(

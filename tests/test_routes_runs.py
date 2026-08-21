@@ -139,8 +139,6 @@ def test_create_run_parses_vars_bracket_notation(client, tmp_path, monkeypatch):
     )
 
     assert response.status_code == 201
-    run = _only_run(client)
-    assert run.variables == {"apache": {"apache_listen_port": 8080}}
     [play] = calls[0]["playbook"]
     assert play["roles"] == [{"role": "apache", "vars": {"apache_listen_port": 8080}}]
 
@@ -154,7 +152,8 @@ def test_create_run_coerces_bool_and_float(client, tmp_path, monkeypatch):
             "load_factor": {"type": "float"},
         },
     )
-    monkeypatch.setattr("ansiblaster.jobs.ansible_runner.run_async", _fake_run_async([]))
+    calls: list[dict] = []
+    monkeypatch.setattr("ansiblaster.jobs.ansible_runner.run_async", _fake_run_async(calls))
 
     response = client.post(
         "/runs",
@@ -168,8 +167,8 @@ def test_create_run_coerces_bool_and_float(client, tmp_path, monkeypatch):
     )
 
     assert response.status_code == 201
-    run = _only_run(client)
-    assert run.variables == {"apache": {"enable_tls": True, "load_factor": 1.5}}
+    [play] = calls[0]["playbook"]
+    assert play["roles"] == [{"role": "apache", "vars": {"enable_tls": True, "load_factor": 1.5}}]
 
 
 def test_create_run_rejects_missing_required_variable_with_400(client, tmp_path, monkeypatch):
@@ -200,21 +199,26 @@ def test_create_run_omits_blank_optional_variable_rather_than_storing_empty_stri
     make_role(
         tmp_path, "apache", argument_specs={"apache_listen_port": {"type": "int", "default": 80}}
     )
-    monkeypatch.setattr("ansiblaster.jobs.ansible_runner.run_async", _fake_run_async([]))
+    calls: list[dict] = []
+    monkeypatch.setattr("ansiblaster.jobs.ansible_runner.run_async", _fake_run_async(calls))
 
     response = client.post(
         "/runs", data=_base_form(roles=["apache"], **{"vars[apache][apache_listen_port]": ""})
     )
 
     assert response.status_code == 201
-    run = _only_run(client)
-    assert run.variables == {}
+    # Omitted entirely (not stored as an explicit ""), so the role keeps its plain-string form
+    # in the generated playbook rather than gaining a "vars" dict -- that's what lets the
+    # role's own argument_specs default win instead of being overridden.
+    [play] = calls[0]["playbook"]
+    assert play["roles"] == ["apache"]
 
 
 def test_create_run_ignores_vars_for_a_role_not_in_roles_list(client, tmp_path, monkeypatch):
     make_role(tmp_path, "apache", argument_specs={"apache_listen_port": {"type": "int"}})
     make_role(tmp_path, "mysql")
-    monkeypatch.setattr("ansiblaster.jobs.ansible_runner.run_async", _fake_run_async([]))
+    calls: list[dict] = []
+    monkeypatch.setattr("ansiblaster.jobs.ansible_runner.run_async", _fake_run_async(calls))
 
     response = client.post(
         "/runs",
@@ -222,21 +226,22 @@ def test_create_run_ignores_vars_for_a_role_not_in_roles_list(client, tmp_path, 
     )
 
     assert response.status_code == 201
-    run = _only_run(client)
-    assert run.variables == {}
+    [play] = calls[0]["playbook"]
+    assert play["roles"] == ["mysql"]
 
 
 def test_create_run_variables_defaults_to_empty_dict_for_role_with_no_argument_specs(
     client, tmp_path, monkeypatch
 ):
     make_role(tmp_path, "docker-host")
-    monkeypatch.setattr("ansiblaster.jobs.ansible_runner.run_async", _fake_run_async([]))
+    calls: list[dict] = []
+    monkeypatch.setattr("ansiblaster.jobs.ansible_runner.run_async", _fake_run_async(calls))
 
     response = client.post("/runs", data=_base_form(roles=["docker-host"]))
 
     assert response.status_code == 201
-    run = _only_run(client)
-    assert run.variables == {}
+    [play] = calls[0]["playbook"]
+    assert play["roles"] == ["docker-host"]
 
 
 def test_run_detail_not_found(client):
