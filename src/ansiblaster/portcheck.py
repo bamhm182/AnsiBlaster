@@ -37,11 +37,27 @@ async def check_port(
     Any connect failure -- refused, timed out, unresolvable host, network unreachable -- is
     reported as closed; this is a best-effort UI hint, not something callers need to
     distinguish reasons for.
+
+    Deliberately uses `asyncio.wait()` here, not `asyncio.wait_for()`: hostname resolution
+    (as opposed to connecting to an already-numeric IP) runs `getaddrinfo` in a worker thread
+    under the hood, and a *running* thread-pool call can't actually be interrupted by
+    `Future.cancel()` -- it only prevents a call that hasn't started yet. `wait_for()` still
+    waits for its cancelled inner task to actually finish unwinding before raising
+    `TimeoutError`, so if DNS resolution for a bad/slow-to-fail hostname is itself slow (or a
+    network's resolver just never answers), `wait_for()` silently keeps waiting past
+    `connect_timeout` instead of enforcing it -- exactly what a "quick" reachability check must
+    not do. `asyncio.wait()` has no such wait-for-cancellation-to-land behavior: it simply
+    stops waiting once `connect_timeout` elapses and hands back whatever's still pending, so
+    this function returns on schedule regardless of how long the abandoned resolution thread
+    takes to finish on its own in the background.
     """
+    connect_task = asyncio.ensure_future(asyncio.open_connection(host, port))
+    _done, pending = await asyncio.wait({connect_task}, timeout=connect_timeout)
+    if connect_task in pending:
+        connect_task.cancel()
+        return PortCheckResult(open=False)
     try:
-        reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(host, port), timeout=connect_timeout
-        )
+        reader, writer = connect_task.result()
     except (TimeoutError, OSError):
         return PortCheckResult(open=False)
 
