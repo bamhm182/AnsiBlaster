@@ -24,10 +24,14 @@ def _new_id() -> str:
 
 
 class TargetOS(str, enum.Enum):
-    """Operating system of a run's target host, determining connection method."""
+    """Target host's OS *and* connection method -- Windows has two: WINDOWS means the `winrm`
+    connection plugin, WINDOWS_PSRP means `psrp` (see inventory.py). Both are still just
+    "Windows" for every other decision keyed off this enum (become is skipped for anything
+    that isn't LINUX -- see jobs.py -- rather than enumerating every non-Linux member)."""
 
     LINUX = "linux"
     WINDOWS = "windows"
+    WINDOWS_PSRP = "windows_psrp"
 
 
 class RunStatus(str, enum.Enum):
@@ -58,8 +62,10 @@ class Run(Base):
     target_port: Mapped[int] = mapped_column(Integer, nullable=False)
     target_user: Mapped[str] = mapped_column(String, nullable=False)
 
+    # Snapshot of the actual roles applied, regardless of whether they were checked
+    # individually or via a playbook preset -- playbooks themselves aren't tracked here, only
+    # what they expanded to (see CLAUDE.md's "Playbooks (role presets)" section).
     roles: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    playbooks: Mapped[list[str] | None] = mapped_column(JSON, nullable=True, default=list)
 
     status: Mapped[RunStatus] = mapped_column(
         Enum(RunStatus), nullable=False, default=RunStatus.PENDING

@@ -1,4 +1,4 @@
-# Ansiblaster
+# AnsiBlaster
 
 [![Docker publish](https://github.com/bamhm182/AnsiBlaster/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/bamhm182/AnsiBlaster/actions/workflows/docker-publish.yml)
 
@@ -27,12 +27,19 @@
 > Treat this as a hobby project / starting point, not as trusted infrastructure tooling.
 > Read the code before you rely on it, especially anything touching credentials or the
 > target host connection.
+>
+> If you need something production-ready and actively maintained instead, look at
+> [**AWX**](https://github.com/ansible/awx) (Red Hat's open-source upstream for Ansible
+> Automation Platform, formerly Ansible Tower) or [**Semaphore**](https://semaphoreui.com/)
+> — both are real projects with real security postures, built for exactly this kind of job.
 
-Ansiblaster is a small web UI for applying Ansible roles to a single target host on demand:
+AnsiBlaster is a small web UI for applying Ansible roles to a single target host on demand:
 point it at a directory of Ansible roles, check the ones you want, type in a target's
 IP/port/username/password, and hit **Apply** — it runs the selected roles against that host via
 [`ansible-runner`](https://ansible.readthedocs.io/projects/runner/) and streams the live log
 back to your browser.
+
+![AnsiBlaster: the docker-host role selected, targeting a local host on the network](docs/screenshot.png)
 
 ## Features
 
@@ -53,7 +60,7 @@ back to your browser.
 
 ```bash
 git clone <this repo>
-cd Ansiblaster
+cd AnsiBlaster
 cp .env.example .env
 docker compose up -d
 ```
@@ -93,7 +100,7 @@ locally (for Linux/SSH targets — see [`CLAUDE.md`](CLAUDE.md) for why both are
 
 ```bash
 git clone <this repo>
-cd Ansiblaster
+cd AnsiBlaster
 uv sync
 uv run ansiblaster
 ```
@@ -123,19 +130,24 @@ logging:
   level: INFO
 
 defaults:
-  linux:
+  ssh:
     username: ""
     password: ""
-  windows:
+  winrm:
+    username: ""
+    password: ""
+  psrp:
     username: ""
     password: ""
 ```
 
-`defaults.linux`/`defaults.windows` just pre-fill the target form's username/password fields —
-convenience, not a stored credential (see the warning above: nothing you submit is persisted
-past the life of that run). Env var overrides follow the config file's nesting with `__`, e.g.
-`ANSIBLASTER_SERVER__PORT`, `ANSIBLASTER_ANSIBLE__ROLES_PATH`,
-`ANSIBLASTER_DEFAULTS__LINUX__PASSWORD`. Full reference in [`CLAUDE.md`](CLAUDE.md#configuration-file).
+`defaults.ssh`/`defaults.winrm`/`defaults.psrp` just pre-fill the target form's username/
+password fields for that connection preset — convenience, not a stored credential (see the
+warning above: nothing you submit is persisted past the life of that run); each is independent,
+so leaving one unset just leaves those fields blank rather than falling back to another. Env
+var overrides follow the config file's nesting with `__`, e.g. `ANSIBLASTER_SERVER__PORT`,
+`ANSIBLASTER_ANSIBLE__ROLES_PATH`,
+`ANSIBLASTER_DEFAULTS__SSH__PASSWORD`. Full reference in [`CLAUDE.md`](CLAUDE.md#configuration-file).
 
 ## Development
 

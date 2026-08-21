@@ -28,14 +28,13 @@ def test_run_defaults(tmp_path):
         assert fetched is not None
         assert fetched.status == RunStatus.PENDING
         assert fetched.roles == ["docker-host"]
-        assert fetched.playbooks == []
         assert fetched.return_code is None
         assert fetched.started_at is None
         assert fetched.finished_at is None
         assert fetched.created_at is not None
 
 
-def test_run_with_playbooks_and_windows_target(tmp_path):
+def test_run_with_windows_target(tmp_path):
     engine = make_engine(str(tmp_path / "test.db"))
     init_db(engine)
     session_factory = make_session_factory(engine)
@@ -47,7 +46,6 @@ def test_run_with_playbooks_and_windows_target(tmp_path):
             target_port=5985,
             target_user="Administrator",
             roles=["iis", "dotnet"],
-            playbooks=["web-stack"],
         )
         session.add(run)
         session.flush()
@@ -56,7 +54,7 @@ def test_run_with_playbooks_and_windows_target(tmp_path):
     with session_scope(session_factory) as session:
         fetched = session.get(Run, run_id)
         assert fetched.target_os == TargetOS.WINDOWS
-        assert fetched.playbooks == ["web-stack"]
+        assert fetched.roles == ["iis", "dotnet"]
 
 
 def test_run_ids_are_unique(tmp_path):

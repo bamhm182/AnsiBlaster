@@ -10,7 +10,7 @@ templates). Not yet done: the Dockerfile/Docker Hub publishing described under "
 Update this file as the remaining pieces land and decisions evolve — do not let it drift out of
 sync with the actual repo.
 
-## What Ansiblaster is
+## What AnsiBlaster is
 
 A small web UI for running Ansible roles against a single target host on demand:
 
@@ -20,12 +20,15 @@ A small web UI for running Ansible roles against a single target host on demand:
    — a named preset (e.g. "LAMP") that checks a predefined set of roles (e.g. `apache`, `mysql`,
    `php`) in one click. Playbook clicks only *add* checks; the user can still uncheck individual
    roles or combine/stack multiple playbooks and manual picks before applying.
-3. The user fills in target connection details: OS (Linux or Windows), IP address, port,
-   username, password. Username/password fields are pre-filled from configured per-OS defaults
-   but remain editable before submitting.
+3. The user fills in target connection details: IP address, port, username, password. There is
+   no separate Linux/Windows picker — the OS is implied by which port preset is chosen (see
+   "Backend & UI" below) — and username/password fields are pre-filled from configured
+   per-preset defaults but remain editable before submitting. A status dot shows a quick
+   reachability check whenever the IP address or Port field loses focus, or a new preset is
+   picked.
 4. Clicking "Apply" launches an Ansible run (via `ansible-runner`) that applies the selected
-   roles to that single target host, authenticating over SSH (Linux, via `sshpass`) or WinRM
-   (Windows), depending on the chosen OS.
+   roles to that single target host, authenticating over SSH (Linux, via `sshpass`), WinRM, or
+   PSRP (the latter two both Windows), depending on the chosen preset.
 5. The user watches a live log of the run in the browser.
 
 Runs are tracked as jobs; multiple runs can execute concurrently, and run history (metadata +
@@ -36,11 +39,111 @@ logs) is persisted so past runs can be reviewed later.
 ### Backend & UI
 
 - **FastAPI** is the web framework. Pages and fragments are server-rendered with **Jinja2**
-  templates; **HTMX** drives interactivity (submitting the apply form, swapping in updated
-  role lists, appending log lines) without a separate frontend build/JS framework.
+  templates; **HTMX** drives most interactivity declaratively (refreshing the role/playbook
+  lists, the Cancel button) without a separate frontend build/JS framework. Two interactions —
+  submitting the apply form and opening a run from History — go through plain `fetch()` instead
+  of htmx's `hx-post`/`hx-get`, because both need to relocate the server's response into a
+  dynamically-created run tab (see "Live logs" below) rather than swap it into a fixed target;
+  letting htmx swap into a throwaway element first, only to relocate its content afterwards,
+  would mean htmx briefly initializes that throwaway element for real (in particular opening a
+  live SSE connection) before it's discarded.
 - The role checklist is built by scanning the configured roles directory at request time (or on
   a refresh action) — a directory is treated as a role if it looks like a standard Ansible role
   (contains `tasks/main.yml`, etc.), not by any hardcoded list.
+- **UI design**: a fixed-viewport, three-column IDE layout (Playbooks / Roles / Deploy) below a
+  thin title bar, styled after VS Code with the Dracula color palette (`style.css`'s `:root`
+  custom properties) — always dark, no light-mode variant. Each column manages its own internal
+  scroll (`overflow-y: auto` with `min-height: 0` on the flex chain) rather than the page
+  itself scrolling. Playbooks and Roles each have a client-side **fuzzy filter** at the top
+  (VS Code command-palette style: query characters must appear in order, not contiguously —
+  see `fuzzyMatch()` in `index.html`) that filters the already-rendered list with no server
+  round trip per keystroke, and re-applies itself after a list is refreshed. The Deploy
+  column's top section is a read-only reflection of whichever role checkboxes are currently
+  checked (`syncSelectedRolesSummary()`, delegated off `change` events so it survives a
+  role-list refresh) — unchecking happens back in the Roles column, not in this summary, though
+  each entry also gets its own eyeball button (same as Roles/Playbooks, see "Viewer tab" below)
+  so a selected role's files can be checked without leaving the Deploy column. `flex: 1 1 auto`
+  on this summary vs. `flex: 0 0 auto` on the target form below it means the summary claims
+  whatever space the target form (a handful of fixed fields) doesn't need, rather than the two
+  splitting a fixed percentage of the column regardless of content. The Apply button is pinned
+  outside the column's scrollable areas, `flex: 0 0 auto` after those two sections. There is no
+  visible Linux/Windows picker in the target form: a small "SSH"/"WinRM"/"WinRM (Secure)"/
+  "PSRP"/"PSRP (Secure)" `<select>` is merged with the port number input into one bordered
+  control (`.port-field-group` in `style.css` — the select and input themselves are
+  borderless/transparent so only the group's shared border shows, making them read as one field
+  rather than two) — picking a preset writes the OS+connection it implies into a hidden
+  `target_os` input and fills the port input from the *selected `<option>`'s own value*, not a
+  per-OS lookup table (`applyPortPreset()` in `index.html`): WinRM and WinRM (Secure) share an
+  OS/connection (so a per-OS port lookup can't tell them apart) but need different actual ports
+  (5985 vs 5986), same for the two PSRP options. The port stays freely editable afterward (e.g.
+  a non-standard SSH port). That hidden `target_os` field is the only thing actually submitted
+  for OS, so `POST /runs` and everything downstream of it (inventory building, `become`, etc.)
+  are unchanged by any of this. WinRM and PSRP are two different Ansible connection
+  plugins/Python libraries (`pywinrm`/`pypsrp`) that both talk to the same Windows WinRM
+  listener (secure or not), so they get their own `TargetOS` members (`WINDOWS`/`WINDOWS_PSRP`)
+  but share default ports and are otherwise treated identically everywhere except
+  `inventory.py` (see "Ansible execution" below). A dedicated Status row ("Status: ⟳ ⬤ <text>")
+  sits just above the Apply button, outside the scrollable target form like the button itself,
+  and shows a quick reachability check (`checkTargetPort()`/`resetPortStatusDot()` in
+  `index.html`, calling `GET /target/check-port` — see `portcheck.py`) run whenever the IP
+  address field *or* the Port field loses focus, or a port preset is picked (`applyPortPreset()`
+  calls `checkTargetPort()` directly rather than just resetting the dot, since the port/protocol
+  just changed out from under whatever was last checked): the text is whatever banner the
+  target volunteers unprompted (e.g. `SSH-2.0-OpenSSH_10.2`, the same thing `nc host port` would
+  show), since a protocol like SSH sends that the instant a connection opens. WinRM/PSRP targets
+  just show "open, no banner" — both are HTTP/SOAP underneath, and HTTP is request-driven, so
+  nothing arrives until the client sends a request first, which this check deliberately never
+  does (keeping the same passive connect-and-listen behavior for every target rather than
+  branching per protocol is what makes it "service-agnostic"). That call is plain `fetch()`
+  rather than htmx so the request's query string can't end up including the password field's
+  value the way htmx's default form-scraping would. A small refresh (`.icon-button`, the same
+  one used elsewhere) sits to the left of the dot to re-run the check on demand, calling the
+  same `checkTargetPort()`.
+- Below the three columns, a full-width collapsible panel has three tabs: **Log** (one sub-tab
+  per concurrent run, opened by submitting the form or clicking a run in History), **History**
+  (`GET /runs`, restyled but otherwise unchanged), and **Viewer** (a read-only file browser, see
+  below). Role checkboxes live in their own column, outside `<form id="apply-form">` (which
+  now wraps only the Deploy column, since that's where the Apply button lives) — they're
+  associated to that form via the HTML5 `form="apply-form"` attribute rather than DOM nesting,
+  which is what both `FormData(form)` and native form submission need to pick them up. Playbook
+  buttons carry no form control at all (see "Playbooks (role presets)" below) — they only ever
+  drive role checkboxes via client-side JS, so there's nothing of theirs for a form to submit.
+- **Viewer tab**: every role and playbook row in the Playbooks/Roles columns, *and* every role
+  in the Deploy column's selected-roles summary, has an eyeball button (`.icon-button
+  .eyeball-button`, an inline SVG rather than an emoji character — a colored emoji glyph would
+  clash with the otherwise monochrome Dracula icon set, and rendering is font/platform-dependent
+  in a way a `stroke="currentColor"` SVG isn't; the SVG markup is shared three ways: a Jinja
+  partial, `partials/eye_icon.html`, for the two server-rendered lists, and a JS constant,
+  `EYE_ICON_SVG` in `index.html` -- built by `{% include %}`ing that same partial into a
+  template literal -- for the selected-roles summary, since that list is built client-side and
+  can't `{% include %}` a partial into its own markup at runtime) right after its name. It's
+  invisible (`visibility: hidden`, not `display: none`, so it doesn't shift the row's layout
+  when it appears) until its row is hovered or it has keyboard focus — clicking it switches the
+  bottom panel to the Viewer tab and loads that item's files into a two-pane read-only browser
+  (`.viewer-file-list` + `.viewer-file-content`), via `openViewer(kind, name)` in `index.html`
+  calling `GET /{roles|playbooks}/{name}/files` (`partials/file_browser.html`) and, per file
+  clicked, `GET /{roles|playbooks}/{name}/file?path=...` (`partials/file_content.html`) — both
+  plain `hx-get`s on the file browser's own buttons, no extra JS needed for that part.
+  `browse.py` backs both: a role's "files" are every regular file under its directory
+  (`rglob("*")`, relative paths); a playbook's is always exactly one entry, its own filename, so
+  the same two-step "browse, then click a file" UI works for both without special-casing either.
+  Once the file list loads, `selectDefaultViewerFile()` auto-loads a file into
+  `.viewer-file-content` without waiting for a click: a role's `tasks/main.yml` if it has one
+  (matched by each file button's `data-relpath`), otherwise whichever file is the *only* one
+  (always true for a playbook) — it issues its own `htmx.ajax()` GET for that file rather than
+  calling `.click()` on the matching button, since that button was just swapped in by the
+  files-list request's own `htmx.ajax()` and isn't necessarily done being wired up for click
+  handling by the time its promise resolves (confirmed via Playwright: a synthetic `.click()`
+  right there was silently a no-op, while issuing the equivalent request directly was not).
+  Every lookup re-validates the role/playbook name against the same rules `roles.py`/
+  `playbooks.py` use for discovery, and every resolved path (the name itself, and any requested
+  file path within a role) is checked to still be inside its expected base directory once
+  resolved — defense against a `../`-laden name or path, or a symlink, trying to read something
+  outside `roles_path`/`playbooks_path`. Neither the eyeball button nor the row it sits in could
+  just be `<button>`-in-`<button>` (roles' would also need to sit inside the checkbox's `<label>`,
+  which would otherwise toggle the checkbox too) — see `role_list.html`/`playbook_list.html`'s
+  comments; playbook rows use the same "outer `<div>`, two sibling `<button>`s" shape as the run
+  tabs described below.
 
 ### Playbooks (role presets)
 
@@ -58,8 +161,11 @@ logs) is persisted so past runs can be reviewed later.
   click. Because it only ever adds checks, this naturally unions with whatever roles are already
   checked (individually or from another playbook) with no extra request needed.
 - Playbooks are a convenience layer only — they do not change what gets submitted or how a run
-  executes. `POST /runs` still just receives whatever roles ended up checked (see Data model &
-  routes), regardless of whether they came from a playbook, manual picks, or both.
+  executes, and they are not tracked once a run is created. `POST /runs` only ever receives
+  `roles[]` (see Data model & routes); there's no `playbooks[]` field and no record anywhere of
+  which playbook(s), if any, contributed to a given run's role selection — a run's history is
+  just the roles that were actually applied, the same regardless of whether they came from a
+  playbook, manual picks, or both.
 
 ### Ansible execution
 
@@ -69,29 +175,33 @@ logs) is persisted so past runs can be reviewed later.
 - Each job builds a **dynamic, single-host inventory** in memory (or in the run's
   `private_data_dir`) from the submitted OS/IP/port/username/password — there is no static
   inventory file to maintain.
-- **Authentication is OS-dependent**, chosen per run by the target's OS field, and always
-  password-based (no SSH keys or WinRM certs):
+- **Authentication is OS/connection-dependent**, chosen per run by the target's `TargetOS`
+  value (`linux` / `windows` / `windows_psrp`), and always password-based (no SSH keys or
+  WinRM/PSRP certs):
   - **Linux** targets use the standard `ssh` connection plugin together with **`sshpass`**,
     which feeds the password non-interactively. `sshpass` must be present wherever a run
     actually executes (dev environment and container image both need it installed as a system
     package, not a Python dependency).
-  - **Windows** targets use the `winrm` connection plugin (via the **`pywinrm`** Python package,
-    which does need to be a declared dependency, unlike `sshpass`), which accepts the password
-    directly — no extra system package required for this path.
-  - `inventory.py` is responsible for branching on the target's OS and setting the right
-    `ansible_connection`/`ansible_port`/auth variables for the host it generates.
-  - Both branches deliberately skip trust verification that would otherwise block a genuinely
-    new target: Linux sets `StrictHostKeyChecking=no`/`UserKnownHostsFile=/dev/null` (no
-    known_hosts entry required), and Windows ignores WinRM cert validation and uses the
-    `ntlm` transport (works over plain HTTP without extra server-side trust config). This
-    matches the app's ad hoc "type an IP and go" workflow, at the cost of not verifying a
-    target's identity on first contact.
+  - **Windows** targets use either the `winrm` connection plugin (via the **`pywinrm`** Python
+    package) or the `psrp` connection plugin (via the **`pypsrp`** Python package) — both
+    declared dependencies, unlike `sshpass`, and both talk HTTP/SOAP to the same WinRM listener
+    on the target, just via different client libraries/Ansible connection plugins. Either way
+    the password is accepted directly — no extra system package required for this path.
+  - `inventory.py` is responsible for branching on the target's OS/connection and setting the
+    right `ansible_connection`/`ansible_port`/auth variables for the host it generates.
+  - All three branches deliberately skip trust verification that would otherwise block a
+    genuinely new target: Linux sets `StrictHostKeyChecking=no`/`UserKnownHostsFile=/dev/null`
+    (no known_hosts entry required), and both Windows connection types ignore the WinRM/PSRP
+    cert validation and use the `ntlm` auth/transport (works over plain HTTP without extra
+    server-side trust config). This matches the app's ad hoc "type an IP and go" workflow, at
+    the cost of not verifying a target's identity on first contact.
 - The generated playbook runs with **`become: true` on Linux targets only** (installing things
   like `docker-host`/`apache` needs root). Since the app only ever collects one password,
   `ansible_become_password` is deliberately set to the same value as the login password
   (harmless no-op if `target_user` is already root) rather than prompting for a second one.
-  Windows targets skip `become` entirely — they're expected to connect as an already-admin
-  account, and Ansible's sudo-based become doesn't apply to WinRM anyway.
+  Windows targets (either connection type) skip `become` entirely — they're expected to
+  connect as an already-admin account, and Ansible's sudo-based become doesn't apply to
+  WinRM/PSRP anyway.
 
 ### Concurrency & job tracking
 
@@ -105,15 +215,72 @@ logs) is persisted so past runs can be reviewed later.
 
 - Log lines reach the browser via **Server-Sent Events (SSE)**, one stream per job
   (e.g. `GET /runs/{job_id}/stream`), fed from `ansible-runner`'s event/status callbacks as the
-  run progresses. This pairs naturally with HTMX's SSE extension for appending lines to the page
-  without polling.
-- Each stdout chunk becomes an unnamed ("message") SSE event that `run_detail.html`'s `<pre>`
-  appends via `sse-swap="message" hx-swap="beforeend"`. When the job finishes, the stream emits
-  one final **named `done` event with no payload**; the run's container element listens for it
-  via `hx-trigger="sse:done"` and just re-`GET`s its own `/runs/{job_id}` fragment
-  (`hx-swap="outerHTML"`) rather than parsing a status out of the event itself — that re-fetch
-  is what actually reflects the final status/return code/full log once ansible-runner has
-  written them.
+  run progresses. Each stdout chunk becomes an unnamed ("message") SSE event; when the job
+  finishes, the stream emits one final **named `done` event with no payload** and closes.
+- The client side is a **plain `EventSource` managed per-run in vanilla JS**
+  (`connectRunStream()`/`closeRunStream()` in `index.html`), not htmx's SSE extension. That
+  extension was tried first and dropped: its `hx-trigger="sse:done"` binding needs to locate
+  its own element's just-created `EventSource` at trigger-setup time, which reliably failed
+  (`htmx:noSSESourceError`, the "done" listener silently never binding) when the element
+  carrying `hx-ext="sse"`/`sse-connect` is inserted via `htmx.process()` — a manual DOM
+  insertion, which opening a run tab requires — rather than through htmx's own swap pipeline.
+  The practical symptom was a finished run's tab staying stuck showing "pending" forever, even
+  though the log lines themselves streamed in fine (`sse-swap="message"` did work reliably;
+  only the completion signal didn't). Hand-rolling both halves in JS avoids the mismatch and
+  keeps one code path instead of mixing two mechanisms for one conceptual stream.
+- `message` events append to that run's `<pre class="run-log">` via plain `textContent +=`;
+  the `done` event closes the `EventSource` and re-`fetch()`es `/runs/{job_id}`, feeding the
+  result back into `openRunTab()` (see below) to refresh the tab in place with the final
+  status/return code/log — the same "re-fetch rather than parse a status out of the event"
+  approach as before, just driven by JS instead of an `hx-trigger`.
+- **Run tabs**: one per concurrent run, inside the bottom panel's Log tab (see "Backend & UI"
+  above). `openRunTab(html)` parses the `run_detail.html` fragment the server has always
+  returned (from `POST /runs` or `GET /runs/{job_id}`), creates or reuses that run's tab
+  button + content pane, calls `htmx.process()` on it (so the Cancel button's `hx-post` still
+  works) and `connectRunStream()` if the run is still active
+  (`run_detail.html`'s `data-active="true"`). Each tab is a `<div class="run-tab">` (not a
+  `<button>` — it wraps two buttons, `.run-tab-label` and `.run-tab-close`, and a button can't
+  nest inside a button) with a single delegated click listener on `#run-tabs`, since
+  `openRunTab()` replaces a tab's `innerHTML` wholesale on every status/log refresh, which would
+  silently drop per-button listeners bound directly to the old nodes. Tabs also carry
+  `data-active` (mirrored from `run_detail.html`) so the close handler below can tell whether to
+  prompt without re-reading the DOM.
+- **Closing a run tab** is only exposed on the tab strip's own `.run-tab-close` button —
+  `run_detail.html` used to carry a second close button in its own header, but that read as two
+  redundant close controls for the same tab, so it was replaced (see "Load into Deploy" below).
+  `requestCloseRunTab(runId)` is what the tab strip's close button calls. If the tab's run is
+  still active, it shows a `window.confirm()` ("stop it and close the tab?") before doing
+  anything — declining leaves the tab open and running untouched; accepting `POST`s
+  `/runs/{job_id}/cancel` first. Either way (or immediately, for an already-finished run)
+  `closeRunTab()` then closes that run's `EventSource` before removing the DOM nodes, so an
+  abandoned tab doesn't leak a connection or leave an orphaned job running with nothing left to
+  show its log.
+- **"Load into Deploy"**, in `run_detail.html`'s header (where the redundant close button used
+  to live), re-populates the Deploy column's target form and role checkboxes from that run via
+  `loadRunIntoDeploy(runId)`, reading the target fields back off `run_detail.html`'s own
+  `data-target-os`/`data-target-port`/`data-target-user`/`data-roles` attributes. It replaces
+  the current role selection outright (unlike a playbook click, which only ever adds checks) so
+  it exactly mirrors that run, and reflects the run's OS/connection in the port preset dropdown
+  too, matched by `data-os` *and* port together first (falling back to a `data-os`-only match,
+  then to no selection) since WinRM/PSRP's plain and "(Secure)" presets now share a `data-os`.
+  The run's actual password was never persisted (see the `runs` table's password note below),
+  so there's nothing to restore it to -- but a password the user already *typed* into the form
+  before clicking this is worth more than the configured default, so it's preserved rather than
+  clobbered: `loadRunIntoDeploy()` only lets `applyOsDefaults()`'s default password through when
+  the Password field was empty beforehand, restoring whatever was there otherwise.
+- **The History tab refreshes itself** (`refreshHistory()`, a `fetch("/runs")` that replaces
+  `#run-list`'s `innerHTML`) rather than requiring the panel's manual "Refresh history" button —
+  called right after a run is submitted (so it appears as `pending`/`running` immediately),
+  again when its SSE stream's `done` event fires, and again after a cancel-via-close, since
+  `closeRunTab()` tears down that run's `EventSource` itself and so its own `done` listener
+  never gets the chance to fire.
+- **The panel between the 3-column workspace and the bottom panel is drag-resizable**: a thin
+  `#panel-resizer` div (`role="separator"`) sits between them; a `mousedown` on it starts
+  tracking `mousemove` and sets `#bottom-panel-body`'s inline `height` directly from the
+  cursor's distance to the viewport bottom (clamped to a sane min/max). Since `.workspace` above
+  it is `flex: 1`, it grows or shrinks to fill whatever space the drag leaves automatically —
+  no separate logic needed for the top half. Disabled (via CSS `:has()` + `pointer-events:
+  none`) while `.bottom-panel` is `.collapsed`, since there's nothing to resize then.
 
 ### Persistence
 
@@ -142,12 +309,11 @@ logs) is persisted so past runs can be reviewed later.
 | Column | Type | Notes |
 |---|---|---|
 | `id` | `String` (UUID), PK | Also used as the `ansible-runner` `ident` / `private_data_dir` name |
-| `target_os` | `String`/enum, not null | `linux` or `windows` — determines the connection method used |
+| `target_os` | `String`/enum, not null | `linux`, `windows`, or `windows_psrp` — determines the connection method used. Never shown to the user as-is: `inventory.connection_label(target_os, target_port)` (a `connection_label` Jinja filter, registered in `deps.py`) maps it back to whatever port preset produces it -- "SSH"/"WinRM"/"WinRM (Secure)"/"PSRP"/"PSRP (Secure)" -- for display in run history/detail, since that's what the user actually picked (see "Backend & UI" above) |
 | `target_host` | `String`, not null | IP address entered by the user |
-| `target_port` | `Integer`, not null | Default `22` for `linux`, `5985` for `windows` (chosen by the form/route, not the DB) |
+| `target_port` | `Integer`, not null | Default `22` for `linux`, `5985` for `windows`/`windows_psrp` (chosen by the form/route, not the DB) |
 | `target_user` | `String`, not null | |
-| `roles` | `JSON` (list[str]), not null | Snapshot of selected role names at submit time (regardless of whether they came from a playbook, manual picks, or both) |
-| `playbooks` | `JSON` (list[str]), nullable | Name(s) of any playbook(s) used to seed the selection (empty/null if the run was built purely from ad hoc role picks). Purely informational — `roles` above is still the source of truth for what actually ran |
+| `roles` | `JSON` (list[str]), not null | Snapshot of selected role names at submit time (regardless of whether they came from a playbook, manual picks, or both — playbooks themselves aren't tracked, see "Playbooks (role presets)" above) |
 | `status` | `String`/enum, not null, default `pending` | `pending → running → successful \| failed \| canceled \| error` |
 | `return_code` | `Integer`, nullable | ansible-runner's `rc` once finished |
 | `created_at` | `DateTime`, not null | |
@@ -163,9 +329,9 @@ config (see "Configuration file" below).
 
 Roles are recorded as a JSON snapshot rather than a normalized association table — roles are
 filesystem-defined, not DB entities, so a run's `roles` column is just an immutable record of
-what was selected at submit time, not a live reference. `playbooks` is the same idea applied to
-whichever playbook(s) contributed to that selection: a snapshot for history/audit purposes, not a
-foreign key to some playbook table (playbooks aren't DB entities either — they're files).
+what was selected at submit time, not a live reference. There's no equivalent column for
+playbooks: they're a client-side-only convenience for checking roles (see "Playbooks (role
+presets)" above), not something a run's history needs to remember.
 
 ### Routes
 
@@ -173,13 +339,18 @@ foreign key to some playbook table (playbooks aren't DB entities either — they
 |---|---|
 | `GET /` | Main page: role checklist, apply form, recent run history |
 | `GET /roles` | HTMX fragment — rescans the roles directory, re-renders the checklist |
+| `GET /roles/{name}/files` | HTMX fragment — Viewer tab file list for one role (`partials/file_browser.html`) |
+| `GET /roles/{name}/file` | HTMX fragment — one file's read-only content (`path` query param, `partials/file_content.html`) |
 | `GET /playbooks` | HTMX fragment — rescans the playbooks directory, re-renders the playbook button list (each button's roles baked in as a data attribute for the client-side check script) |
+| `GET /playbooks/{name}/files` | HTMX fragment — Viewer tab file list for one playbook (always one entry, its own file) |
+| `GET /playbooks/{name}/file` | HTMX fragment — that file's read-only content (`path` query param) |
 | `GET /runs` | HTMX fragment/page — run history list |
-| `POST /runs` | Create a run (`roles[]`, `playbooks[]` (informational, may be empty), `target_os`, `target_host`, `target_port`, `target_user`, `target_password`); inserts a `pending` row, launches the ansible-runner job async, returns the new run's detail panel |
+| `POST /runs` | Create a run (`roles[]`, `target_os`, `target_host`, `target_port`, `target_user`, `target_password`); inserts a `pending` row, launches the ansible-runner job async, returns the new run's detail panel |
 | `GET /runs/{job_id}` | Run detail fragment/page — status, target, roles, timestamps, log panel container |
 | `GET /runs/{job_id}/stream` | SSE endpoint — live log lines + status transitions for the job; closes when the run ends |
 | `GET /runs/{job_id}/log` | Full plain-text log — used for replaying a finished run, or backfilling before SSE attaches |
 | `POST /runs/{job_id}/cancel` | Cancel an in-progress run (`ansible-runner` stop) → status becomes `canceled` |
+| `GET /target/check-port` | JSON `{"open": bool, "banner": str \| null}` — quick, service-agnostic TCP reachability + banner check for the Deploy column's Status row (`host`/`port` query params) |
 
 ## Configuration file
 
@@ -207,18 +378,24 @@ logging:
   level: INFO
 
 defaults:
-  linux:
+  ssh:
     username: ""
     password: ""
-  windows:
+  winrm:
+    username: ""
+    password: ""
+  psrp:
     username: ""
     password: ""
 ```
 
-`defaults.linux` / `defaults.windows` pre-fill the target form's username/password fields
-depending on which OS the user selects, purely as a convenience — they are never used directly
-without passing through the form, and the actual value submitted (default or edited) is the one
-held in memory for that run (see the password-persistence note above).
+`defaults.ssh` / `defaults.winrm` / `defaults.psrp` pre-fill the target form's username/password
+fields depending on which port preset the user picks (see "Backend & UI" above), purely as a
+convenience — they are never used directly without passing through the form, and the actual
+value submitted (default or edited) is the one held in memory for that run (see the
+password-persistence note above). Each is independent, with no fallback between them: WinRM and
+PSRP are both "Windows" but not necessarily the same account, so leaving `psrp` unset (say)
+just leaves that preset's fields blank rather than borrowing `winrm`'s values.
 
 Every key is overridable via an environment variable using the `ANSIBLASTER_` prefix with `__` as
 the nesting delimiter, e.g.:
@@ -227,7 +404,8 @@ the nesting delimiter, e.g.:
 - `ANSIBLASTER_ANSIBLE__ROLES_PATH=/srv/ansible/roles`
 - `ANSIBLASTER_ANSIBLE__PLAYBOOKS_PATH=/srv/ansible/playbooks`
 - `ANSIBLASTER_DATABASE__PATH=/data/ansiblaster.db`
-- `ANSIBLASTER_DEFAULTS__LINUX__PASSWORD=...` / `ANSIBLASTER_DEFAULTS__WINDOWS__PASSWORD=...`
+- `ANSIBLASTER_DEFAULTS__SSH__PASSWORD=...` / `ANSIBLASTER_DEFAULTS__WINRM__PASSWORD=...` /
+  `ANSIBLASTER_DEFAULTS__PSRP__PASSWORD=...`
 
 ## Project layout
 
@@ -256,36 +434,48 @@ src/ansiblaster/
 │                       # persists status/log to DB and pushes lines to the job's queue.
 │                       # Also stdout_log_path(run), mirroring ansible-runner's own
 │                       # private_data_dir/artifacts/<ident>/stdout convention
+├── portcheck.py        # check_port(host, port): service-agnostic async TCP connect + a
+│                       # best-effort read of whatever banner the target volunteers unprompted
+│                       # (works for SSH, naturally yields none for WinRM) backing the Deploy
+│                       # column's Status row
+├── browse.py           # Viewer tab: list_role_files/read_role_file, list_playbook_files/
+│                       # read_playbook_file -- re-validates the role/playbook name and checks
+│                       # every resolved path stays inside its expected base directory
 ├── routes/
 │   ├── __init__.py     # aggregates routers for app.py to include
 │   ├── pages.py        # GET /
-│   ├── roles.py        # GET /roles fragment (distinct module from top-level roles.py —
-│   │                   # that one discovers roles, this one serves the HTTP fragment)
+│   ├── roles.py        # GET /roles fragment (distinct module from top-level roles.py --
+│   │                   # that one discovers roles, this one serves the HTTP fragment), plus
+│   │                   # the Viewer tab's GET /roles/{name}/files and .../file
 │   ├── playbooks.py    # GET /playbooks fragment (distinct from top-level playbooks.py, same
-│   │                   # naming pattern as roles.py above)
-│   └── runs.py         # POST /runs, GET /runs, GET /runs/{job_id}, GET /runs/{job_id}/stream,
-│                       # GET /runs/{job_id}/log, POST /runs/{job_id}/cancel
+│   │                   # naming pattern as roles.py above), plus the Viewer tab's
+│   │                   # GET /playbooks/{name}/files and .../file
+│   ├── runs.py         # POST /runs, GET /runs, GET /runs/{job_id}, GET /runs/{job_id}/stream,
+│   │                   # GET /runs/{job_id}/log, POST /runs/{job_id}/cancel
+│   └── target.py       # GET /target/check-port -- thin JSON wrapper around portcheck.py
 ├── templates/
 │   ├── base.html
-│   ├── index.html
+│   ├── index.html       # 3-column workspace + bottom panel; owns nearly all client-side JS
+│   │                   # (fuzzy filter, playbook->checkbox, run tabs, EventSource management)
 │   └── partials/
 │       ├── role_list.html
 │       ├── playbook_list.html  # playbook buttons, each with its roles baked in as a data
 │       │                       # attribute for the client-side check script
+│       ├── file_browser.html   # Viewer tab: one role's/playbook's file list
+│       ├── file_content.html   # Viewer tab: one file's read-only content
 │       ├── run_list.html
-│       ├── run_row.html     # single history-list item, re-rendered/appended via HTMX
-│       └── run_detail.html  # status + log panel container for a job
+│       ├── run_row.html     # single history-list item; opened via a delegated fetch(),
+│       │                   # not hx-get (see "Backend & UI")
+│       └── run_detail.html  # one run's status + log; relocated into a run tab client-side
 └── static/
     ├── htmx.min.js     # vendored, not CDN — the app must work with no outbound internet access
-    ├── ext/
-    │   └── sse.js      # htmx's SSE extension, vendored from the same htmx.org release so the
-    │                   # extension API matches the core version exactly
-    └── style.css
+    └── style.css       # Dracula palette + the 3-column/bottom-panel IDE layout
 ```
 
 - `tests/` mirrors this layout alongside `src/` (not inside the package): `test_roles.py`,
-  `test_playbooks.py`, `test_inventory.py`, `test_jobs.py`, `test_routes_pages.py`,
-  `test_routes_roles.py`, `test_routes_playbooks.py`, `test_routes_runs.py`, plus a shared
+  `test_playbooks.py`, `test_inventory.py`, `test_jobs.py`, `test_portcheck.py`,
+  `test_browse.py`, `test_routes_pages.py`, `test_routes_roles.py`, `test_routes_playbooks.py`,
+  `test_routes_runs.py`, `test_routes_target.py`, plus a shared
   `conftest.py` (the `client` fixture — a `TestClient` wired to per-test tmp_path
   roles/playbooks/artifacts/DB paths — and `make_role`/`make_playbook` helpers).
 - Tests mock `ansible-runner` execution (`monkeypatch.setattr("ansiblaster.jobs.ansible_runner.run_async", ...)`)
@@ -326,8 +516,8 @@ independent without extra process-management code.
   `python:3.11-slim` with only `/app/.venv` copied in — no `uv`, no build tools. Runtime system
   packages: `sshpass` + `openssh-client` (Ansible's `ssh` connection plugin needs both to
   authenticate to Linux targets with a password) and `gosu` (privilege drop, see below).
-  `ansible-core`/`ansible-runner`/`pywinrm` are just Python deps already in `pyproject.toml`,
-  installed into the venv like everything else.
+  `ansible-core`/`ansible-runner`/`pywinrm`/`pypsrp` are just Python deps already in
+  `pyproject.toml`, installed into the venv like everything else.
 - **Container user**: non-root by default (`ansiblaster`, baseline uid/gid 1000), but the
   container starts as root and **`docker-entrypoint.sh`** remaps that user to `PUID`/`PGID` env
   vars (default `1000`/`1000`, a no-op at those values) before dropping privileges via `gosu`
@@ -360,10 +550,14 @@ independent without extra process-management code.
   have secrets access anyway). Requires two repo secrets set in GitHub —
   `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (a Docker Hub access token, not the account
   password) — which aren't and shouldn't be committed anywhere in this repo.
-- **Not verified by a real build**: this session had no Docker daemon available (client only),
-  so the Dockerfile/entrypoint are written against well-established patterns (this mirrors
-  `uv`'s own documented Docker guide for the multi-stage venv approach) and checked as far as
-  possible without one — entrypoint shell syntax was checked (`sh -n`/`dash -n`), and both
-  `python:3.11-slim` and `ghcr.io/astral-sh/uv:latest` were confirmed to actually resolve via
-  the registry APIs — but an actual `docker build`/`docker run` pass is still owed before
-  trusting this in production.
+- **Still not verified by a real `docker build`**: no session so far has had a Docker daemon
+  available (client only). One real bug already slipped through this gap: the builder stage's
+  second `uv sync` originally lacked `--no-editable`, so it installed the project in editable
+  mode — a `.pth` file in site-packages pointing back at the builder stage's `/app/src` — which
+  works inside that stage but breaks the instant the runtime stage copies only `.venv`, since
+  the `.pth` then points nowhere (`ModuleNotFoundError: No module named 'ansiblaster'` at
+  container start). Found via a real `docker compose up` failure report, and the fix was
+  verified by faithfully reproducing the two-stage layering with `uv` directly (separate
+  directories per stage, physically removing the builder's `src/` before testing the "runtime"
+  `.venv` in isolation) rather than guessed at — but that is still not the same as an actual
+  `docker build`/`docker run` pass, which is owed before trusting this in production.

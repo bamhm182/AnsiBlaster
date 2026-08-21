@@ -22,3 +22,27 @@ def test_list_playbooks_empty(client):
 
     assert response.status_code == 200
     assert "No playbooks found" in response.text
+
+
+def test_playbook_files_lists_its_own_file(client, tmp_path):
+    make_playbook(tmp_path, "lamp", ["apache", "mysql", "php"])
+
+    response = client.get("/playbooks/lamp/files")
+
+    assert response.status_code == 200
+    assert "lamp.yml" in response.text
+
+
+def test_playbook_files_unknown_playbook_404s(client):
+    response = client.get("/playbooks/does-not-exist/files")
+
+    assert response.status_code == 404
+
+
+def test_playbook_file_returns_content(client, tmp_path):
+    make_playbook(tmp_path, "lamp", ["apache", "mysql", "php"])
+
+    response = client.get("/playbooks/lamp/file", params={"path": "lamp.yml"})
+
+    assert response.status_code == 200
+    assert "apache" in response.text

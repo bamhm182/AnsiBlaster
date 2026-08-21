@@ -17,6 +17,7 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 from sqlalchemy.orm import Session, sessionmaker
 
+from ansiblaster.inventory import connection_label
 from ansiblaster.jobs import JobManager
 from ansiblaster.settings import Settings
 
@@ -49,8 +50,19 @@ def _tojson_script(value: Any) -> Markup:
     return Markup(dumped)
 
 
+def _run_connection_label(run: Any) -> str:
+    """`{{ run | connection_label }}` -- SSH/WinRM/PSRP (see inventory.connection_label) rather
+    than showing a Run's raw target_os value, since there's no Linux/Windows picker in the UI
+    for that value to correspond to anymore (see CLAUDE.md's "Backend & UI" section). Takes the
+    whole Run rather than being called as connection_label(run.target_os, run.target_port)
+    directly from the template, only because Jinja filters are naturally single-argument.
+    """
+    return connection_label(run.target_os, run.target_port)
+
+
 templates.env.filters["tojson"] = _tojson_attr
 templates.env.filters["tojson_script"] = _tojson_script
+templates.env.filters["connection_label"] = _run_connection_label
 
 
 def get_app_settings(request: Request) -> Settings:

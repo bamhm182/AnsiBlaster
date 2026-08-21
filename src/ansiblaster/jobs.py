@@ -77,7 +77,6 @@ class JobManager:
         target_user: str,
         target_password: str,
         roles: list[str],
-        playbooks: list[str] | None = None,
     ) -> Run:
         """Create the Run row and launch its ansible-runner job. Returns the new Run.
 
@@ -97,7 +96,6 @@ class JobManager:
                 target_port=target_port,
                 target_user=target_user,
                 roles=list(roles),
-                playbooks=list(playbooks or []),
             )
             session.add(run)
             session.flush()
@@ -221,8 +219,9 @@ def _build_playbook(roles: list[str], target_os: TargetOS) -> list[dict[str, Any
     """The ephemeral playbook applying the selected roles to the single generated host.
 
     become is only enabled for Linux targets (see inventory.py's ansible_become_password
-    note) -- Windows targets are expected to connect as an already-administrative account,
-    and Ansible's become defaults (sudo) don't apply to WinRM connections anyway.
+    note) -- Windows targets (either connection method) are expected to connect as an
+    already-administrative account, and Ansible's become defaults (sudo) don't apply to
+    WinRM/PSRP connections anyway.
     """
     play: dict[str, Any] = {"hosts": "all", "roles": list(roles)}
     if target_os is TargetOS.LINUX:

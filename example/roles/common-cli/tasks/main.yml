@@ -1,0 +1,10 @@
+---
+- name: Install common CLI tools
+  ansible.builtin.apt:
+    name:
+      - zip
+      - unzip
+      - curl
+      - tmux
+    state: present
+    update_cache: true

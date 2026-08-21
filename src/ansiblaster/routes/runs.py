@@ -44,7 +44,6 @@ async def create_run(
     target_user = str(form.get("target_user") or "").strip()
     target_password = str(form.get("target_password") or "")
     roles = [role for role in form.getlist("roles") if role]
-    playbooks = [playbook for playbook in form.getlist("playbooks") if playbook]
 
     try:
         target_port = int(form.get("target_port", ""))
@@ -62,7 +61,6 @@ async def create_run(
             target_user=target_user,
             target_password=target_password,
             roles=roles,
-            playbooks=playbooks,
         )
     except ValueError as exc:
         return PlainTextResponse(str(exc), status_code=400)

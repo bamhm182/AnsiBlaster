@@ -1,22 +1,31 @@
-<fieldset id="playbook-presets">
-  <legend>Playbooks</legend>
-  {% if playbooks %}
-    {% for name, roles in playbooks.items() %}
-      <span class="playbook-option">
-        <input type="checkbox" name="playbooks" value="{{ name }}" id="playbook-{{ name }}" hidden>
-        <button
-          type="button"
-          class="playbook-button"
-          data-playbook="{{ name }}"
-          data-roles="{{ roles | tojson }}"
-          onclick="applyPlaybook(this)"
-        >{{ name }}</button>
-      </span>
-    {% endfor %}
-  {% else %}
-    <p class="empty-hint">No playbooks found.</p>
-  {% endif %}
-  <button type="button" hx-get="/playbooks" hx-target="#playbook-list" hx-swap="innerHTML">
-    Refresh playbooks
-  </button>
-</fieldset>
+{% if playbooks %}
+  {% for name, roles in playbooks.items() %}
+    {# A plain <div>, not a <button>, is the "row" here: it holds two buttons (apply + view),
+       and a button can't nest inside a button per the HTML content model -- same reasoning as
+       index.html's run tabs (see CLAUDE.md's "Live logs" section). No checkbox here (unlike
+       role_list.html) -- playbooks are only ever a client-side shortcut for checking roles
+       (applyPlaybook() below), never submitted or tracked themselves (see CLAUDE.md's
+       "Playbooks (role presets)" section). #}
+    <div class="list-item playbook-item" data-filter-name="{{ name }}">
+      <button
+        type="button"
+        class="playbook-button"
+        data-playbook="{{ name }}"
+        data-roles="{{ roles | tojson }}"
+        onclick="applyPlaybook(this)"
+      >
+        <span class="list-item-name">{{ name }}</span>
+      </button>
+      <button
+        type="button"
+        class="icon-button eyeball-button"
+        title="View {{ name }} playbook"
+        aria-label="View {{ name }} playbook"
+        onclick="openViewer('playbook', '{{ name }}')"
+      >{% include "partials/eye_icon.html" %}</button>
+      <span class="list-item-arrow" aria-hidden="true">&#9656;</span>
+    </div>
+  {% endfor %}
+{% else %}
+  <p class="empty-hint">No playbooks found.</p>
+{% endif %}

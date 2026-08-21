@@ -2,35 +2,31 @@
 <div
   id="run-detail-{{ run.id }}"
   class="run-detail status-{{ run.status.value }}"
-  {% if is_active %}
-  hx-ext="sse"
-  sse-connect="/runs/{{ run.id }}/stream"
-  hx-trigger="sse:done"
-  hx-get="/runs/{{ run.id }}"
-  hx-swap="outerHTML"
-  {% endif %}
+  data-run-id="{{ run.id }}"
+  data-target-host="{{ run.target_host }}"
+  data-target-os="{{ run.target_os.value }}"
+  data-target-port="{{ run.target_port }}"
+  data-target-user="{{ run.target_user }}"
+  data-roles="{{ run.roles | tojson }}"
+  data-status="{{ run.status.value }}"
+  data-active="{{ 'true' if is_active else 'false' }}"
 >
   <div class="run-detail-header">
-    <h3>Run {{ run.id }}</h3>
+    <h3>{{ run.target_host }}</h3>
     <button
       type="button"
-      class="run-detail-close"
-      onclick="this.closest('.run-detail').remove()"
-      aria-label="Dismiss"
-    >&times;</button>
+      class="run-detail-reuse"
+      onclick="loadRunIntoDeploy('{{ run.id }}')"
+      title="Load this run's target and roles into the Deploy form"
+    >Load into Deploy</button>
   </div>
 
   <dl class="run-detail-meta">
     <dt>Target</dt>
-    <dd>{{ run.target_user }}@{{ run.target_host }}:{{ run.target_port }} ({{ run.target_os.value }})</dd>
+    <dd>{{ run.target_user }}@{{ run.target_host }}:{{ run.target_port }} ({{ run | connection_label }})</dd>
 
     <dt>Roles</dt>
     <dd>{{ run.roles | join(", ") }}</dd>
-
-    {% if run.playbooks %}
-      <dt>Playbooks</dt>
-      <dd>{{ run.playbooks | join(", ") }}</dd>
-    {% endif %}
 
     <dt>Status</dt>
     <dd class="status">{{ run.status.value }}</dd>
@@ -47,5 +43,5 @@
     </button>
   {% endif %}
 
-  <pre class="run-log" sse-swap="message" hx-swap="beforeend">{{ initial_log }}</pre>
+  <pre class="run-log">{{ initial_log }}</pre>
 </div>

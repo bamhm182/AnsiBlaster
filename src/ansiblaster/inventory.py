@@ -7,7 +7,9 @@ is never persisted (see CLAUDE.md's password-persistence note), only ever held i
 the life of the request/job.
 
 Which connection variables get set depends entirely on the target's OS: Linux goes over SSH
-(authenticated via sshpass), Windows over WinRM.
+(authenticated via sshpass), Windows over WinRM or PSRP (both HTTP/SOAP-family protocols
+speaking to the same WinRM listener on the target, just via different Ansible connection
+plugins/Python libraries -- pywinrm for one, pypsrp for the other).
 """
 
 from __future__ import annotations
@@ -23,19 +25,42 @@ HOST_ALIAS = "target"
 DEFAULT_PORTS: dict[TargetOS, int] = {
     TargetOS.LINUX: 22,
     TargetOS.WINDOWS: 5985,
+    TargetOS.WINDOWS_PSRP: 5985,
 }
 
 # Ad hoc onboarding of an arbitrary IP the control host has likely never talked to before is
-# the whole point of this app, so both connection types deliberately skip the trust
+# the whole point of this app, so all three connection types deliberately skip the trust
 # verification that would otherwise require a manual step (adding to known_hosts / trusting a
 # WinRM cert) before the very first run against a new target.
 _SSH_COMMON_ARGS = "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-_WINRM_HTTPS_PORT = 5986
+# Shared by both Windows connection types: they're both just talking to the same WinRM
+# listener, whose default HTTPS port is 5986 regardless of which client library connects to it.
+WINDOWS_HTTPS_PORT = 5986
 
 
 def default_port(target_os: TargetOS) -> int:
     """Return the default connection port for a target OS (used to pre-fill the apply form)."""
     return DEFAULT_PORTS[target_os]
+
+
+_CONNECTION_LABELS: dict[TargetOS, str] = {
+    TargetOS.LINUX: "SSH",
+    TargetOS.WINDOWS: "WinRM",
+    TargetOS.WINDOWS_PSRP: "PSRP",
+}
+
+
+def connection_label(target_os: TargetOS, target_port: int) -> str:
+    """Human-readable connection method for display (run history, run detail): SSH / WinRM /
+    PSRP, with "(Secure)" appended for the HTTPS-port variant of WinRM/PSRP. There's no
+    Linux/Windows picker in the UI (see CLAUDE.md's "Backend & UI" section) -- what the user
+    actually picked was one of these protocol presets, not an OS, so that's what's worth
+    showing back to them rather than the raw target_os enum value.
+    """
+    label = _CONNECTION_LABELS[target_os]
+    if target_os is not TargetOS.LINUX and target_port == WINDOWS_HTTPS_PORT:
+        label += " (Secure)"
+    return label
 
 
 def build_inventory(
@@ -51,6 +76,8 @@ def build_inventory(
         host_vars = _linux_host_vars(target_host, target_port, target_user, target_password)
     elif target_os is TargetOS.WINDOWS:
         host_vars = _windows_host_vars(target_host, target_port, target_user, target_password)
+    elif target_os is TargetOS.WINDOWS_PSRP:
+        host_vars = _windows_psrp_host_vars(target_host, target_port, target_user, target_password)
     else:  # pragma: no cover - defensive, TargetOS is a closed enum
         raise ValueError(f"Unsupported target OS: {target_os!r}")
 
@@ -85,8 +112,25 @@ def _windows_host_vars(
         "ansible_user": target_user,
         "ansible_password": target_password,
         "ansible_winrm_transport": "ntlm",
-        "ansible_winrm_scheme": "https" if target_port == _WINRM_HTTPS_PORT else "http",
+        "ansible_winrm_scheme": "https" if target_port == WINDOWS_HTTPS_PORT else "http",
         # Only load-bearing over https, but harmless to always set -- avoids a manual
         # cert-trust step against a target's self-signed/default WinRM cert.
         "ansible_winrm_server_cert_validation": "ignore",
+    }
+
+
+def _windows_psrp_host_vars(
+    target_host: str, target_port: int, target_user: str, target_password: str
+) -> dict[str, Any]:
+    return {
+        "ansible_connection": "psrp",
+        "ansible_host": target_host,
+        "ansible_port": target_port,
+        "ansible_user": target_user,
+        "ansible_password": target_password,
+        # Mirrors _windows_host_vars' choices above -- same reasoning, just PSRP's own var
+        # names (ansible-core's builtin psrp connection plugin, backed by pypsrp).
+        "ansible_psrp_auth": "ntlm",
+        "ansible_psrp_protocol": "https" if target_port == WINDOWS_HTTPS_PORT else "http",
+        "ansible_psrp_cert_validation": "ignore",
     }

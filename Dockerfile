@@ -17,8 +17,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-project --no-dev
 
 COPY src ./src
+# --no-editable: without it, uv installs the local project in editable mode -- a .pth file in
+# site-packages pointing back at this stage's /app/src -- which works fine here but breaks the
+# instant the runtime stage below copies only .venv and not src, since that .pth then points
+# nowhere (ModuleNotFoundError: No module named 'ansiblaster' at container start).
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
+    uv sync --frozen --no-dev --no-editable
 
 ########################################
 # Runtime: lean image with just the venv + what Ansible needs to connect out to targets.
