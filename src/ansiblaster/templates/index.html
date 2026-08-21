@@ -53,22 +53,22 @@
 
     <section class="panel panel-deploy" aria-label="Deploy">
       <form id="apply-form">
-        <div class="panel-header"><h2>Deploy</h2></div>
+        <div class="panel-header">
+          <h2>Deploy</h2>
+          <button type="submit" class="apply-button" id="apply-button">Apply</button>
+        </div>
 
         <div class="deploy-selected" id="selected-roles-summary" aria-label="Selected roles">
           <p class="empty-hint">No roles selected.</p>
         </div>
 
-        <!-- Variables: one fieldset per checked role that declares any (via
-             meta/argument_specs.yml -- see role_vars.py and CLAUDE.md's "Role variables"
-             section), rebuilt wholesale by syncRoleVariables() alongside
-             selected-roles-summary above. Inputs live inside #apply-form's own DOM subtree
-             (unlike role checkboxes, which need the form="apply-form" trick only because they
-             live in a different column/panel), so they're picked up by FormData(applyForm)
-             with no extra wiring. -->
-        <div class="deploy-vars" id="deploy-vars-summary" aria-label="Role variables">
-          <p class="empty-hint">No variables for the selected roles.</p>
-        </div>
+        <div
+          class="deploy-resizer"
+          id="deploy-resizer"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize selected-roles list"
+        ></div>
 
         <div class="deploy-target">
           <!-- Which OS this run targets is now inferred entirely from the port preset picked
@@ -119,6 +119,20 @@
                      value="{{ defaults.ssh.password }}">
             </label>
           </div>
+
+          <!-- Variables: one fieldset per checked role that declares any (via
+               meta/argument_specs.yml -- see role_vars.py and CLAUDE.md's "Role variables"
+               section), rebuilt wholesale by syncRoleVariables() alongside
+               selected-roles-summary above. Lives under the credentials fields, in the same
+               scrollable area, and is the one part of .deploy-target that actually flexes to
+               fill whatever room is left (see style.css) -- everything above it is a handful
+               of fixed fields. Inputs live inside #apply-form's own DOM subtree (unlike role
+               checkboxes, which need the form="apply-form" trick only because they live in a
+               different column/panel), so they're picked up by FormData(applyForm) with no
+               extra wiring. -->
+          <div class="deploy-vars" id="deploy-vars-summary" aria-label="Role variables">
+            <p class="empty-hint">No variables for the selected roles.</p>
+          </div>
         </div>
 
         <div class="form-error" id="apply-form-error" hidden></div>
@@ -135,8 +149,6 @@
           <span id="port-status-dot" class="port-status-dot" aria-hidden="true"></span>
           <span id="port-status-text" class="port-status-text">Not checked yet.</span>
         </div>
-
-        <button type="submit" class="apply-button" id="apply-button">Apply</button>
       </form>
     </section>
   </div>
@@ -868,7 +880,7 @@
     resizer.addEventListener("mousedown", (evt) => {
       if (panel.classList.contains("collapsed")) return;
       evt.preventDefault();
-      document.body.classList.add("is-resizing");
+      document.body.classList.add("is-resizing", "is-resizing-panel");
 
       const onMouseMove = (moveEvt) => {
         const maxHeight = window.innerHeight * 0.9;
@@ -876,7 +888,43 @@
         body.style.height = height + "px";
       };
       const onMouseUp = () => {
-        document.body.classList.remove("is-resizing");
+        document.body.classList.remove("is-resizing", "is-resizing-panel");
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    });
+  })();
+
+  // ---------------------------------------------------------------------
+  // Drag-resize the selected-roles summary via #deploy-resizer -- same technique as
+  // #panel-resizer above, just measured from the top of the column instead of the bottom of
+  // the viewport (since #selected-roles-summary grows downward from a fixed top edge, right
+  // below the panel header, rather than upward from a fixed bottom edge). #selected-roles-
+  // summary gets a fixed inline height set directly from the drag; .deploy-target below it is
+  // flex:1, so it grows/shrinks to absorb whatever space the drag leaves -- and within
+  // .deploy-target, the Variables area is the one part that's actually flexible (see
+  // style.css), so this is really what resizes the Variables area itself.
+  // ---------------------------------------------------------------------
+  (function setupDeployResizer() {
+    const resizer = document.getElementById("deploy-resizer");
+    const summary = document.getElementById("selected-roles-summary");
+    const deployPanel = document.querySelector(".panel-deploy");
+    const MIN_HEIGHT = 48;
+
+    resizer.addEventListener("mousedown", (evt) => {
+      evt.preventDefault();
+      document.body.classList.add("is-resizing", "is-resizing-deploy");
+      const top = summary.getBoundingClientRect().top;
+
+      const onMouseMove = (moveEvt) => {
+        const maxHeight = deployPanel.getBoundingClientRect().height * 0.6;
+        const height = Math.min(maxHeight, Math.max(MIN_HEIGHT, moveEvt.clientY - top));
+        summary.style.height = height + "px";
+      };
+      const onMouseUp = () => {
+        document.body.classList.remove("is-resizing", "is-resizing-deploy");
         document.removeEventListener("mousemove", onMouseMove);
         document.removeEventListener("mouseup", onMouseUp);
       };

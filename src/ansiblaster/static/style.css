@@ -142,11 +142,10 @@ main {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  /* Fixed (not min-height) instead of content-driven: Playbooks/Roles headers are taller than
-     their h2 alone because of the refresh .icon-button sitting in them, but Deploy's header has
-     no button -- left content-sized, its row comes out shorter than the other two, leaving its
-     border-bottom sitting visibly higher than theirs. A fixed height pins all three to the same
-     pixel value regardless of what each one happens to contain. */
+  /* Fixed (not min-height) instead of content-driven: each header's content (a refresh
+     .icon-button, or Deploy's own Apply button) is a different height than its h2 alone, which
+     would otherwise leave their border-bottoms sitting at slightly different pixel rows. A
+     fixed height pins all three to the same value regardless of what each one contains. */
   height: 2.375rem;
   padding: 0.5rem 0.75rem;
   background: var(--bg-elevated);
@@ -313,12 +312,13 @@ main {
 }
 
 .deploy-selected {
-  /* Splits available space evenly with .deploy-vars below (each independently scrollable) --
-     both can get arbitrarily long (many roles; many roles x many variables each), unlike
-     .deploy-target's fixed-ish handful of fields, so these two are the pair that should claim
-     whatever room .deploy-target doesn't need rather than either splitting a fixed percentage
-     of the column on its own. */
-  flex: 1 1 0;
+  /* Deliberately small and fixed-height (not flex-grow) -- the Variables area below, inside
+     .deploy-target, is the thing that should get the most room now (see .deploy-target and
+     .deploy-vars below). Height is still just a default: #deploy-resizer (index.html's
+     setupDeployResizer()) drags it directly, the same technique the bottom log panel's own
+     #panel-resizer uses. */
+  flex: 0 0 auto;
+  height: 6rem;
   min-height: 0;
   overflow-y: auto;
   border-bottom: 1px solid var(--bg-inset);
@@ -349,15 +349,29 @@ main {
   white-space: nowrap;
 }
 
+/* Drag handle between .deploy-selected and .deploy-target -- mousedown/move/up logic lives in
+   index.html's setupDeployResizer(), same pattern as .panel-resizer below it. */
+.deploy-resizer {
+  flex: 0 0 5px;
+  background: var(--bg-inset);
+  cursor: row-resize;
+}
+.deploy-resizer:hover,
+body.is-resizing-deploy .deploy-resizer {
+  background: var(--accent);
+}
+
 /* Variables: one <fieldset class="deploy-vars-role"> per checked role that declares any (see
-   role_vars.py, index.html's syncRoleVariables()). Sits between .deploy-selected and
-   .deploy-target and shares .deploy-selected's flex-grow treatment -- see the comment there. */
+   role_vars.py, index.html's syncRoleVariables()). Lives under the credentials fields inside
+   .deploy-target and is the one part of it that actually flexes to fill remaining space --
+   see .deploy-target below. */
 .deploy-vars {
-  flex: 1 1 0;
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  border-bottom: 1px solid var(--bg-inset);
-  padding: 0.5rem 0.85rem;
+  margin-top: 0.5rem;
+  border-top: 1px solid var(--bg-inset);
+  padding-top: 0.65rem;
 }
 .deploy-vars-role {
   border: 1px solid var(--bg-inset);
@@ -390,12 +404,17 @@ main {
 }
 
 .deploy-target {
-  /* Sized to fit its own content (IP/port/username/password) rather than claiming a fixed
-     share of the column -- see .deploy-selected/.deploy-vars above, which split whatever's
-     left over. overflow-y stays as a safety net for a viewport too short to fit even this. */
-  flex: 0 0 auto;
+  /* Now the flexible one: grows to fill whatever .deploy-selected above (fixed-height, see
+     there) doesn't use. Its own direct fields (the hidden OS input, IP/port, username/
+     password) stay their natural size as normal flex items; .deploy-vars is the one child
+     that actually flexes (flex: 1 1 auto, see above) and scrolls internally -- overflow:
+     hidden here (rather than overflow-y: auto) is what keeps the fixed fields always visible
+     instead of the whole section scrolling together. */
+  flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 0.75rem 0.85rem;
 }
 
@@ -537,18 +556,22 @@ main {
   }
 }
 
+/* Lives in the Deploy column's .panel-header now, next to the h2 -- same slot as the
+   Playbooks/Roles headers' refresh .icon-button, sized to fit that fixed-height row rather
+   than spanning the column's full width like it used to. */
 .apply-button {
   flex: 0 0 auto;
-  width: 100%;
-  padding: 0.75rem;
+  width: auto;
+  padding: 0.3rem 0.9rem;
   background: var(--accent);
   color: var(--accent-fg);
   border: none;
   font-weight: 700;
-  font-size: 0.85rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   cursor: pointer;
+  border-radius: 3px;
 }
 .apply-button:hover {
   background: var(--pink);
@@ -578,7 +601,7 @@ main {
   cursor: row-resize;
 }
 .panel-resizer:hover,
-body.is-resizing .panel-resizer {
+body.is-resizing-panel .panel-resizer {
   background: var(--accent);
 }
 .panel-resizer:has(+ .bottom-panel.collapsed) {
@@ -586,7 +609,10 @@ body.is-resizing .panel-resizer {
   pointer-events: none;
 }
 
-/* Dragging: suppress text selection / iframe-style pointer weirdness for the duration. */
+/* Dragging (either resizer): suppress text selection / iframe-style pointer weirdness for the
+   duration. is-resizing-panel/is-resizing-deploy (added alongside this, see index.html) pick
+   out which resizer bar itself should highlight -- both resizers use this shared class just
+   for the generic cursor/user-select effect. */
 body.is-resizing {
   cursor: row-resize;
   user-select: none;

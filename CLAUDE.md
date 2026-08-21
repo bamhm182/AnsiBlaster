@@ -62,27 +62,38 @@ logs) is persisted so past runs can be reviewed later.
   (VS Code command-palette style: query characters must appear in order, not contiguously —
   see `fuzzyMatch()` in `index.html`) that filters the already-rendered list with no server
   round trip per keystroke, and re-applies itself after a list is refreshed. The Deploy
-  column's top section is a read-only reflection of whichever role checkboxes are currently
-  checked (`syncSelectedRolesSummary()`, delegated off `change` events so it survives a
-  role-list refresh) — unchecking happens back in the Roles column, not in this summary, though
-  each entry also gets its own eyeball button (same as Roles/Playbooks, see "Viewer tab" below)
-  so a selected role's files can be checked without leaving the Deploy column. Directly below
-  that summary sits the **Variables** area (`.deploy-vars`/`#deploy-vars-summary`) — one
-  `<fieldset>` per checked role that declares any variables via `meta/argument_specs.yml` (see
-  "Role variables (argument_specs)" below), built the same "read-only reflection of the Roles
-  column, rebuilt wholesale on every selection change" way as the summary above it
-  (`syncRoleVariables()`, called from the same delegated `change` listener plus every other
-  place `syncSelectedRolesSummary()` is called — `applyPlaybook()`, the page's initial load,
-  and `loadRunIntoDeploy()`). Unlike the role checkboxes (which live in a different column and
-  need the `form="apply-form"` attribute trick), the Variables area's inputs are built directly
+  column's **Apply button lives in its `.panel-header`**, next to the `<h2>`, the same slot
+  the Playbooks/Roles headers use for their refresh `.icon-button` — a fixed header height
+  (`.panel-header`'s `height: 2.375rem`) keeps all three headers' bottom borders aligned
+  regardless of what each one contains. Below the header, a small, **fixed-height (not
+  flex-grow) read-only reflection** of whichever role checkboxes are currently checked
+  (`syncSelectedRolesSummary()`, delegated off `change` events so it survives a role-list
+  refresh) — unchecking happens back in the Roles column, not in this summary, though each
+  entry also gets its own eyeball button (same as Roles/Playbooks, see "Viewer tab" below) so a
+  selected role's files can be checked without leaving the Deploy column. A drag handle
+  (`#deploy-resizer`, `setupDeployResizer()` in `index.html`) sits right below it — the same
+  technique as the bottom log panel's own `#panel-resizer` (see "Live logs" below), just
+  measured from the summary's top edge instead of the viewport's bottom, since this one grows
+  downward from a fixed top rather than upward from a fixed bottom. Below *that* is the target
+  form (`.deploy-target`, now `flex: 1 1 auto` — the one that actually grows to fill whatever
+  the small fixed-height summary above doesn't use): IP/port, username/password, and then the
+  **Variables** area (`.deploy-vars`/`#deploy-vars-summary`) — one `<fieldset>` per checked role
+  that declares any variables via `meta/argument_specs.yml` (see "Role variables
+  (argument_specs)" below) — directly underneath the credentials fields, in that same section.
+  `.deploy-target` is itself `display: flex; flex-direction: column; overflow: hidden`, with
+  only `.deploy-vars` set to `flex: 1 1 auto` and independently `overflow-y: auto` — that's what
+  keeps the IP/port/credentials fields always visible above it while Variables (the thing most
+  likely to be long — many roles × many variables each) is the part that actually scrolls and
+  claims the most space, rather than the whole section scrolling together or splitting a fixed
+  percentage regardless of content. `syncRoleVariables()` rebuilds it wholesale on every
+  selection change, called from the same delegated `change` listener plus every other place
+  `syncSelectedRolesSummary()` is called — `applyPlaybook()`, the page's initial load, and
+  `loadRunIntoDeploy()`. Unlike the role checkboxes (which live in a different column and need
+  the `form="apply-form"` attribute trick), the Variables area's inputs are built directly
   inside `#apply-form`'s own DOM subtree, so `FormData(applyForm)` picks them up with no extra
-  wiring. `flex: 1 1 0` on both this summary and the Variables area (vs. `flex: 0 0 auto` on the
-  target form below them) means the two split whatever space the target form (a handful of
-  fixed fields) doesn't need, each independently scrollable, rather than any of the three
-  splitting a fixed percentage of the column regardless of content. The Apply button is pinned
-  outside the column's scrollable areas, `flex: 0 0 auto` after those sections. There is no
-  visible Linux/Windows picker in the target form: a small "SSH"/"WinRM"/"WinRM (Secure)"/
-  "PSRP"/"PSRP (Secure)" `<select>` is merged with the port number input into one bordered
+  wiring. There is no visible Linux/Windows picker in the target form: a small "SSH"/"WinRM"/
+  "WinRM (Secure)"/"PSRP"/"PSRP (Secure)" `<select>` is merged with the port number input into
+  one bordered
   control (`.port-field-group` in `style.css` — the select and input themselves are
   borderless/transparent so only the group's shared border shows, making them read as one field
   rather than two) — picking a preset writes the OS+connection it implies into a hidden
@@ -97,8 +108,8 @@ logs) is persisted so past runs can be reviewed later.
   listener (secure or not), so they get their own `TargetOS` members (`WINDOWS`/`WINDOWS_PSRP`)
   but share default ports and are otherwise treated identically everywhere except
   `inventory.py` (see "Ansible execution" below). A dedicated Status row ("Status: ⟳ ⬤ <text>")
-  sits just above the Apply button, outside the scrollable target form like the button itself,
-  and shows a quick reachability check (`checkTargetPort()`/`resetPortStatusDot()` in
+  sits at the bottom of the column, outside `.deploy-target`'s scrollable area, and shows a
+  quick reachability check (`checkTargetPort()`/`resetPortStatusDot()` in
   `index.html`, calling `GET /target/check-port` — see `portcheck.py`) run whenever the IP
   address field *or* the Port field loses focus, or a port preset is picked (`applyPortPreset()`
   calls `checkTargetPort()` directly rather than just resetting the dot, since the port/protocol
