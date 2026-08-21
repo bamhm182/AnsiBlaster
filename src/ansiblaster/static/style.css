@@ -368,7 +368,10 @@ body.is-resizing-deploy .deploy-resizer {
    inside .deploy-target's single scrolling area -- no layout of its own needed here, each
    .deploy-vars-role fieldset (Host included) already carries its own bottom margin. */
 .deploy-vars-role {
-  border: 1px solid var(--bg-inset);
+  /* --bg-inset (the usual border color elsewhere) all but disappears against this section's
+     background -- --selection (already used for hover/active rows) is a step lighter, giving
+     the fieldset a visible edge without it reading as a highlighted/active element. */
+  border: 1px solid var(--selection);
   border-radius: 4px;
   margin: 0 0 0.65rem;
   padding: 0.5rem 0.65rem 0.15rem;
