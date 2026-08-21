@@ -374,7 +374,10 @@ body.is-resizing-deploy .deploy-resizer {
   border: 1px solid var(--selection);
   border-radius: 4px;
   margin: 0 0 0.65rem;
-  padding: 0.5rem 0.65rem 0.15rem;
+  /* Symmetric top/bottom -- the last row inside (.field-row or .deploy-var-row) has its own
+     bottom margin zeroed out below, so this is the only bottom spacing before the border,
+     matching the top spacing before the first row. */
+  padding: 0.5rem 0.65rem;
 }
 .deploy-vars-role:last-child {
   margin-bottom: 0;
@@ -383,6 +386,16 @@ body.is-resizing-deploy .deploy-resizer {
   padding: 0 0.35rem;
   color: var(--cyan);
   font-size: 0.8rem;
+}
+/* .field-row (Host) and .deploy-var-row (per-variable) are the two kinds of "row" that can
+   appear inside a .deploy-vars-role fieldset -- both get the same between-row gap, and both
+   drop it on their last row so it doesn't stack with the fieldset's own bottom padding above. */
+.field-row:last-child,
+.deploy-var-row:last-child {
+  margin-bottom: 0;
+}
+.deploy-var-row {
+  margin-bottom: 0.65rem;
 }
 .deploy-var-row label {
   display: block;
