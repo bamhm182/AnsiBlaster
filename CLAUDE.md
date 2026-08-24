@@ -50,7 +50,27 @@ logs) is persisted so past runs can be reviewed later.
   dynamically-created run tab (see "Live logs" below) rather than swap it into a fixed target;
   letting htmx swap into a throwaway element first, only to relocate its content afterwards,
   would mean htmx briefly initializes that throwaway element for real (in particular opening a
-  live SSE connection) before it's discarded.
+  live SSE connection) before it's discarded. Every URL the browser is ever asked to hit --
+  `base.html`'s stylesheet/script tags, every `hx-get`/`hx-post`, and every JS-built
+  `fetch()`/`EventSource()` URL in `index.html` -- is written **relative, with no leading
+  slash** (`static/style.css`, `runs`, `` `runs/${runId}/stream` ``, etc.), never root-absolute
+  (`/static/style.css`). This is what lets the app work when reverse-proxied at an arbitrary,
+  request-invisible subpath -- e.g. Coder OSS's path-based workspace-app proxying
+  (`https://coder.example.com/@user/workspace.agent/apps/ansiblaster/`) -- which strips its own
+  prefix before forwarding to the backend and sends no `X-Forwarded-Prefix`-style header either,
+  so the backend has no way to learn its external prefix from the request it receives; only the
+  browser's own address bar knows it. Root-absolute URLs resolve against the domain root and so
+  silently skip straight past that prefix (fetching a *different* app's, or Coder's own,
+  `/static/style.css`); relative URLs resolve against the current document's own address --
+  whatever the browser is actually looking at, prefix included -- which is why this only works
+  correctly when that address ends in a trailing slash (true for `GET /`, the app's only real
+  page). `base_url` values baked server-side into `partials/file_browser.html` (from
+  `routes/roles.py`/`routes/playbooks.py`) follow the same rule (`f"roles/{name}"`, not
+  `f"/roles/{name}"`). Since the backend itself is never asked to serve anything at a prefixed
+  path (Coder strips it before proxying), none of this needs any server-side `root_path`
+  handling -- no uvicorn `--root-path`, no `X-Forwarded-*` middleware -- the fix is entirely in
+  how URLs are *written*, not how they're *resolved server-side*. Keep any new URL added to a
+  template or to `index.html`'s JS on this same relative convention.
 - The role checklist is built by scanning the configured roles directory at request time (or on
   a refresh action) — a directory is treated as a role if it looks like a standard Ansible role
   (contains `tasks/main.yml`, etc.), not by any hardcoded list.

@@ -36,7 +36,7 @@ async def role_files(request: Request, name: str, settings: Settings = Depends(g
     except NotFound as exc:
         raise HTTPException(status_code=404, detail="Role not found.") from exc
     return templates.TemplateResponse(
-        request, "partials/file_browser.html", {"files": files, "base_url": f"/roles/{name}"}
+        request, "partials/file_browser.html", {"files": files, "base_url": f"roles/{name}"}
     )
 
 

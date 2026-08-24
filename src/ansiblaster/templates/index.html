@@ -9,7 +9,7 @@
         <button
           type="button"
           class="icon-button"
-          hx-get="/playbooks"
+          hx-get="playbooks"
           hx-target="#playbook-list"
           hx-swap="innerHTML"
           title="Refresh playbooks"
@@ -33,7 +33,7 @@
         <button
           type="button"
           class="icon-button"
-          hx-get="/roles"
+          hx-get="roles"
           hx-target="#role-list"
           hx-swap="innerHTML"
           title="Refresh roles"
@@ -194,7 +194,7 @@
         <ul class="run-list" id="run-list">
           {% include "partials/run_list.html" %}
         </ul>
-        <button type="button" hx-get="/runs" hx-target="#run-list" hx-swap="innerHTML">
+        <button type="button" hx-get="runs" hx-target="#run-list" hx-swap="innerHTML">
           Refresh history
         </button>
       </div>
@@ -296,7 +296,7 @@
     text.textContent = "Checking…";
     try {
       const response = await fetch(
-        `/target/check-port?host=${encodeURIComponent(host)}&port=${encodeURIComponent(port)}`
+        `target/check-port?host=${encodeURIComponent(host)}&port=${encodeURIComponent(port)}`
       );
       const result = await response.json();
       dot.className = "port-status-dot " + (result.open ? "is-open" : "is-closed");
@@ -572,7 +572,7 @@
     switchBottomTab("viewer");
     document.getElementById("viewer-file-content").innerHTML =
       '<p class="empty-hint">Select a file on the left to view its contents.</p>';
-    const baseUrl = `/${kind}s/${encodeURIComponent(name)}`;
+    const baseUrl = `${kind}s/${encodeURIComponent(name)}`;
     await htmx.ajax("GET", `${baseUrl}/files`, "#viewer-file-list");
     selectDefaultViewerFile(baseUrl);
   }
@@ -603,7 +603,7 @@
 
   function connectRunStream(runId) {
     if (activeEventSources[runId]) return;
-    const source = new EventSource(`/runs/${runId}/stream`);
+    const source = new EventSource(`runs/${runId}/stream`);
     activeEventSources[runId] = source;
 
     source.addEventListener("message", (evt) => {
@@ -614,7 +614,7 @@
     source.addEventListener("done", async () => {
       closeRunStream(runId);
       try {
-        const response = await fetch(`/runs/${runId}`);
+        const response = await fetch(`runs/${runId}`);
         if (response.ok) openRunTab(await response.text());
       } catch (err) {
         // Best-effort refresh for the final status/rc -- the log itself is already fully
@@ -738,7 +738,7 @@
     if (isActive) {
       if (!window.confirm("This run is still in progress. Stop it and close the tab?")) return;
       try {
-        await fetch(`/runs/${runId}/cancel`, { method: "POST" });
+        await fetch(`runs/${runId}/cancel`, { method: "POST" });
       } catch (err) {
         // Best-effort -- still close the tab locally even if the cancel request itself failed.
       }
@@ -831,7 +831,7 @@
     applyButton.disabled = true;
     applyFormError.hidden = true;
     try {
-      const response = await fetch("/runs", { method: "POST", body: new FormData(applyForm) });
+      const response = await fetch("runs", { method: "POST", body: new FormData(applyForm) });
       const text = await response.text();
       if (!response.ok) {
         applyFormError.textContent = text || `Request failed (${response.status}).`;
@@ -851,7 +851,7 @@
   document.getElementById("run-list").addEventListener("click", async (evt) => {
     const link = evt.target.closest(".run-row-link");
     if (!link) return;
-    const response = await fetch(`/runs/${link.dataset.runId}`);
+    const response = await fetch(`runs/${link.dataset.runId}`);
     const text = await response.text();
     if (response.ok) openRunTab(text);
   });
@@ -862,7 +862,7 @@
   // stream signals completion (see connectRunStream's "done" listener above).
   async function refreshHistory() {
     try {
-      const response = await fetch("/runs");
+      const response = await fetch("runs");
       if (response.ok) document.getElementById("run-list").innerHTML = await response.text();
     } catch (err) {
       // Best-effort -- the "Refresh history" button remains as a manual fallback.
