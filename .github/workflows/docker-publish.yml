@@ -73,3 +73,11 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # Terraform's kreuzwerker/docker provider (docker_registry_image data source) fails
+          # to fetch bamhm182/ansiblaster:latest's digest when the pushed index also carries a
+          # provenance/SBOM attestation manifest -- its digest-fetch logic doesn't handle that
+          # extra manifest entry and errors with "error reading registry response body:
+          # %!s(<nil>)". Disabling both attestations here keeps the published image/index a
+          # plain manifest (list) with no attestation entry.
+          provenance: false
+          sbom: false
