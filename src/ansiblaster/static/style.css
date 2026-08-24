@@ -1076,7 +1076,10 @@ body.is-resizing {
   display: flex;
   flex-direction: column;
   width: min(34rem, 92vw);
-  max-height: 85vh;
+  /* Fixed, not max-height -- the modal should always sit at its full size regardless of how
+     little content the active tab happens to have (Host Variables, an empty Role Variables
+     list, etc.), rather than shrinking to fit and then growing again as content changes. */
+  height: 85vh;
   background: var(--bg-sidebar);
   border: 1px solid var(--selection);
   border-radius: 6px;
