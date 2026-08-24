@@ -63,13 +63,30 @@ logs) is persisted so past runs can be reviewed later.
   silently skip straight past that prefix (fetching a *different* app's, or Coder's own,
   `/static/style.css`); relative URLs resolve against the current document's own address --
   whatever the browser is actually looking at, prefix included -- which is why this only works
-  correctly when that address ends in a trailing slash (true for `GET /`, the app's only real
-  page). `base_url` values baked server-side into `partials/file_browser.html` (from
-  `routes/roles.py`/`routes/playbooks.py`) follow the same rule (`f"roles/{name}"`, not
-  `f"/roles/{name}"`). Since the backend itself is never asked to serve anything at a prefixed
-  path (Coder strips it before proxying), none of this needs any server-side `root_path`
-  handling -- no uvicorn `--root-path`, no `X-Forwarded-*` middleware -- the fix is entirely in
-  how URLs are *written*, not how they're *resolved server-side*. Keep any new URL added to a
+  correctly when that address ends in a trailing slash: `https://.../apps/ansiblaster` (no
+  trailing slash) resolves `static/style.css` one directory too high (`.../apps/static/style.css`
+  -- a different app's, or nothing at all), while `.../apps/ansiblaster/` resolves it correctly.
+  Path-based proxies commonly don't add that trailing slash on their own, and -- same root cause
+  as the paragraph above -- the backend can't detect or fix a missing one itself, since every
+  request it receives looks identical either way once the proxy's prefix is stripped. So
+  `base.html` self-heals this **client-side**: the very first thing in `<head>`, before the
+  stylesheet/htmx `<script src>` tags, is a small blocking inline `<script>` that redirects
+  (`window.location.replace()`, so it doesn't leave a broken history entry) to
+  `window.location.pathname + "/"` whenever `pathname` doesn't already end in `/` -- a no-op at
+  the plain, non-proxied root (`GET /`). It has to be the *first* thing (before any relative
+  `<link>`/`<script src>`), since a browser's preload scanner can speculatively dispatch those
+  fetches (against the still-wrong base) while the parser is still working through the rest of
+  the document, even though the redirect script itself executes and calls `replace()`
+  synchronously before the parser ever reaches them -- so a request or two against the wrong
+  base can still appear (and 404) in the network log for an instant before the corrected page
+  takes over, which is harmless (the corrected page loads right behind it) but expected if you
+  see it. `base_url` values baked server-side into `partials/file_browser.html` (from
+  `routes/roles.py`/`routes/playbooks.py`) follow the same relative-URL rule (`f"roles/{name}"`,
+  not `f"/roles/{name}"`). Since the backend itself is never asked to serve anything at a
+  prefixed path (Coder strips it before proxying), none of this needs any server-side
+  `root_path` handling -- no uvicorn `--root-path`, no `X-Forwarded-*` middleware -- the fix is
+  entirely in how URLs are *written* and, for the trailing slash specifically, a client-side
+  redirect, not anything resolved or configured server-side. Keep any new URL added to a
   template or to `index.html`'s JS on this same relative convention.
 - The role checklist is built by scanning the configured roles directory at request time (or on
   a refresh action) — a directory is treated as a role if it looks like a standard Ansible role
