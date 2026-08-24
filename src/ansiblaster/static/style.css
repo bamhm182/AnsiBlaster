@@ -1137,8 +1137,13 @@ body.is-resizing {
   padding: 0.85rem 0.9rem;
   overflow-y: auto;
 }
+/* !important is load-bearing here: .settings-tab-content[hidden] and
+   .settings-tab-content[data-settings-content="role-variables"] below are equal specificity
+   (one class + one attribute selector each), so without this, the role-variables rule's own
+   `display: flex` -- being the later rule in the cascade -- would win even while [hidden] is
+   set, leaving the Role Variables tab visibly stacked above whichever tab is actually active. */
 .settings-tab-content[hidden] {
-  display: none;
+  display: none !important;
 }
 
 /* Role Variables tab: a fixed-top (heading/hint/filter) and fixed-bottom (Save button + "add
