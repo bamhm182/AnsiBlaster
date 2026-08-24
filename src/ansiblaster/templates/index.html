@@ -12,6 +12,7 @@
           hx-get="playbooks"
           hx-target="#playbook-list"
           hx-swap="innerHTML"
+          hx-on::after-request="if (event.detail.successful) showToast('Playbooks refreshed.')"
           title="Refresh playbooks"
         >&#8635;</button>
       </div>
@@ -36,6 +37,7 @@
           hx-get="roles"
           hx-target="#role-list"
           hx-swap="innerHTML"
+          hx-on::after-request="if (event.detail.successful) showToast('Roles refreshed.')"
           title="Refresh roles"
         >&#8635;</button>
       </div>
@@ -194,7 +196,13 @@
         <ul class="run-list" id="run-list">
           {% include "partials/run_list.html" %}
         </ul>
-        <button type="button" hx-get="runs" hx-target="#run-list" hx-swap="innerHTML">
+        <button
+          type="button"
+          hx-get="runs"
+          hx-target="#run-list"
+          hx-swap="innerHTML"
+          hx-on::after-request="if (event.detail.successful) showToast('History refreshed.')"
+        >
           Refresh history
         </button>
       </div>
@@ -497,6 +505,7 @@
       if (!response.ok) throw new Error(`Request failed (${response.status})`);
       button.classList.add("save-default-success");
       setTimeout(() => button.classList.remove("save-default-success"), 1200);
+      showToast(`"${varName}" saved as default.`);
       // Every role checkbox's data-vars (the source buildVarRow() falls back to as a
       // variable's "default") is a snapshot baked in at the last GET /roles -- refresh it now
       // so this override actually takes effect the next time any role is (re)checked, without
@@ -505,6 +514,7 @@
     } catch (err) {
       button.classList.add("save-default-error");
       setTimeout(() => button.classList.remove("save-default-error"), 1200);
+      showToast(`Failed to save "${varName}" as default.`, "error");
     }
   }
 
@@ -592,8 +602,11 @@
     });
   }
 
-  document.querySelectorAll(".fuzzy-filter").forEach((input) => {
-    input.addEventListener("input", () => applyFuzzyFilter(input));
+  // Delegated (rather than a direct listener per `.fuzzy-filter` found at page load) so it also
+  // covers the Settings modal's own filter input (id="settings-var-filter"), which doesn't
+  // exist yet at this point -- it's loaded later via htmx (see routes/settings.py).
+  document.addEventListener("input", (evt) => {
+    if (evt.target.matches(".fuzzy-filter")) applyFuzzyFilter(evt.target);
   });
 
   // Re-apply whichever filter is active after its list is refreshed via the header's refresh

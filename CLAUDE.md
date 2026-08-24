@@ -434,6 +434,20 @@ right, next to "AnsiBlaster" -- `base.html`). The modal has two tabs, **Role Var
   separate small "+" action instead, since there's no existing value to bulk-save alongside yet
   (`POST /settings/role-variables`, also what a Deploy-column "Save as Default" click hits --
   see below). Removing one is still a per-row action (`DELETE /settings/role-variables/{name}`).
+  The tab itself is a fixed-top/scrolling-middle/fixed-bottom flex column (see style.css's
+  `[data-settings-content="role-variables"]` rules): the heading/hint/filter stay put at the
+  top, the "Save Role Variables" button and the "add a new one" fields stay put at the bottom,
+  and only the list of existing overrides in between scrolls -- a long list shouldn't push
+  those always-relevant controls below the fold, nor force the whole tab to scroll along with
+  it. The scrolling list is wrapped in its own `<form id="settings-var-bulk-form">` (so it can
+  collect every row's `value[<name>]` field on submit) but the actual submit button lives
+  outside that scrolling markup, in the fixed-bottom area, associated back to the form via the
+  HTML5 `form="settings-var-bulk-form"` attribute -- the same technique `role_list.html`'s
+  checkboxes already use for `#apply-form`, which likewise lives in a different part of the DOM
+  from its own submit button. A fuzzy-filter input (`#settings-var-filter`, same
+  `fuzzyMatch()`/`applyFuzzyFilter()` client-side filtering the Playbooks/Roles columns already
+  use -- see "Backend & UI" above) sits in the fixed-top area, matching each row via a
+  `data-filter-name="<name>"` attribute on `.settings-var-row`.
 - **Host Variables tab** -- username/password overrides per port preset (`ssh`/`winrm`/`psrp` --
   the same three `config.yaml` already has under `defaults.*`, see "Configuration file" below),
   each field its own full-width line (the same row shape the Role Variables tab's list uses,
@@ -500,19 +514,70 @@ precedent the eyeball button already established (see "Backend & UI" above) rath
 Unicode emoji glyph, which renders in color and inconsistently across platforms.
 
 Because `#settings-modal-body`'s content is swapped wholesale by htmx on every mutating action,
-its tab state (`activeSettingsTab`) has to survive that swap -- `switchSettingsTab()` is
-re-applied via a `htmx:afterSwap` listener rather than relying on whatever
-`settings_modal_body.html` renders as the default tab each time. All of this tab-switching (and
-`openSettingsModal()`, and the `htmx:afterRequest` → `refreshRoleList()` wiring above) lives in
-`base.html`'s own trailing `<script>` block, **not** `index.html`'s -- deliberately, and not
-just for the "modal chrome belongs with the modal markup" reasoning that already put the
-click-outside/Escape handling there. `index.html`'s script runs while parsing `<main>`, which
-comes *before* `base.html`'s modal `<div>`s in the document -- a `document.getElementById
+both its tab state (`activeSettingsTab`) and the Role Variables tab's filter query
+(`settingsVarFilterQuery`) have to survive that swap -- `switchSettingsTab()` and a
+value-restore-then-`applyFuzzyFilter()` call are both re-applied via a `htmx:afterSwap`
+listener, rather than relying on whatever `settings_modal_body.html` renders as the default tab
+(or empty filter) each time. `settingsVarFilterQuery` itself is kept current via its own
+`input` listener on `#settings-modal-body` (delegated, since the filter input is rebuilt by
+every swap too) -- separate from `index.html`'s own delegated `.fuzzy-filter` input listener,
+which drives the actual live filtering and needs no changes to also cover this dynamically
+-loaded input. `openSettingsModal()` resets both `activeSettingsTab` and
+`settingsVarFilterQuery` on every fresh open. All of this tab/filter-state code (and the
+`htmx:afterRequest` → `refreshRoleList()`/toast wiring below) lives in `base.html`'s own
+trailing `<script>` block, **not** `index.html`'s -- deliberately, and not just for the "modal
+chrome belongs with the modal markup" reasoning that already put the click-outside/Escape
+handling there. `index.html`'s script runs while parsing `<main>`, which comes *before*
+`base.html`'s modal `<div>`s in the document -- a `document.getElementById
 ("settings-modal-body")` call from `index.html`'s script would find nothing yet and throw
 (`Cannot read properties of null`), silently breaking every inline `onclick` on the page after
 it, since a script-level exception aborts the rest of that `<script>` block. `refreshRoleList()`
-itself stays in `index.html` (it only touches elements already present inside `<main>`, and
-`base.html`'s later script calling an earlier-defined global function is the safe direction).
+and `applyFuzzyFilter()` themselves stay in `index.html` (they only touch elements already
+present inside `<main>`, and `base.html`'s later script calling an earlier-defined global
+function is the safe direction).
+
+### Toast notifications
+
+A brief, auto-dismissing confirmation (`showToast(message, type = "success")`, `base.html`) for
+an action that would otherwise give no visible feedback -- appended to a fixed-position
+`#toast-container` (bottom right), fades in, then fades out and removes itself after ~3s.
+`type` is `"success"` (default, `--green`-accented) or `"error"` (`--red`-accented), toggled via
+a `toast-success`/`toast-error` class on the toast element. Defined in `base.html` (co-located
+with the container it manipulates) but called from both `base.html`'s own settings-modal
+listener and `index.html`'s event handlers -- safe regardless of which script defines it, since
+every call happens from inside an event handler, by which point the whole page (both scripts)
+has already finished executing at least once, unlike the top-level `document.getElementById`
+pitfall described above.
+
+Wired into every action a user would expect to notice completing, but currently gives no other
+visible sign of:
+
+- **Playbooks/Roles panel refresh buttons** and the **History tab's "Refresh history" button**
+  -- each has an `hx-on::after-request="if (event.detail.successful) showToast('...')"`
+  attribute right on the button itself (htmx 1.9's namespaced `hx-on::<event>` shorthand),
+  rather than a JS listener, since each is a simple, self-contained one-off. This deliberately
+  does *not* toast for `refreshRoleList()`'s own programmatic `GET /roles` (see "Settings
+  popup" above) -- that call targets `#role-list` directly via `htmx.ajax()`, whose
+  `htmx:afterRequest` event is dispatched on `#role-list` and bubbles up through its own
+  ancestors, never reaching the sibling refresh button's own directly-attached listener. Piggy
+  -backing a redundant "Roles refreshed" toast onto e.g. a "Save as Default" click (which
+  triggers that same background refresh as a side effect) would be noise, not signal -- the
+  meaningful toast there is "saved as default", not "roles refreshed".
+- **The Settings modal's own mutating actions** (add/bulk-save/delete a role-variable override,
+  save host settings) -- handled generically by the same `#settings-modal-body`
+  `htmx:afterRequest` listener that already calls `refreshRoleList()` (see "Settings popup"
+  above), extended to also call `showToast()`: `settingsSuccessMessage(path)` picks the message
+  by matching `evt.detail.requestConfig.path` against each of the four `settings/role-variables*`
+  /`settings/host` routes, and `settingsErrorMessage(xhr)` unwraps a failed request's body for
+  the error toast -- FastAPI renders a raised `HTTPException` as JSON (`{"detail": "..."}`), not
+  plain text, so this is `JSON.parse()`-based rather than showing the raw response body
+  verbatim, falling back to a generic message if the body isn't that shape (e.g. a 500 with an
+  HTML error page rather than a raised `HTTPException`).
+- **The Deploy column's "Save as Default"** (`saveVariableAsDefault()` in `index.html`) -- not
+  htmx-driven (see "Role variables (argument_specs)" above), so it calls `showToast()` directly
+  in its existing `fetch()` success/`catch` branches, alongside the icon's own
+  success/error color flash (kept as extra, more spatially-precise feedback right at the field
+  itself; the toast is the more visible, load-bearing one).
 
 ## Data model & routes
 

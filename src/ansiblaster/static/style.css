@@ -1132,16 +1132,52 @@ body.is-resizing {
 }
 
 .settings-tab-content {
+  flex: 1;
+  min-height: 0;
   padding: 0.85rem 0.9rem;
+  overflow-y: auto;
 }
 .settings-tab-content[hidden] {
   display: none;
 }
 
-.modal-body {
+/* Role Variables tab: a fixed-top (heading/hint/filter) and fixed-bottom (Save button + "add
+   a new one" fields) sandwiching a scrolling middle -- a long override list shouldn't push
+   those always-relevant controls below the fold, and shouldn't force the whole tab to scroll
+   along with it either (contrast the plain overflow-y: auto above, which is enough for the
+   shorter, fixed-size Host Variables tab). */
+.settings-tab-content[data-settings-content="role-variables"] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.settings-role-vars-fixed-top,
+.settings-role-vars-fixed-bottom {
+  flex: 0 0 auto;
+}
+#settings-var-bulk-form {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.settings-var-list-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+}
+.settings-role-vars-fixed-bottom {
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--bg-inset);
+}
+.settings-role-vars-fixed-bottom .apply-button {
+  margin-bottom: 0.6rem;
+}
+
+.modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -1219,4 +1255,48 @@ body.is-resizing {
 
 .settings-host-form .apply-button {
   margin-top: 0.2rem;
+}
+
+/* ---------- Toast notifications (showToast() in base.html) ---------- */
+
+.toast-container {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 200;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 0.5rem;
+  /* The container spans a chunk of the viewport but has no visible content of its own between
+     toasts -- clicks there should fall through to whatever's underneath. Individual toasts
+     re-enable it for themselves below in case a future toast ever wants to be clickable. */
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  min-width: 12rem;
+  max-width: 22rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--selection);
+  border-left: 3px solid var(--accent);
+  color: var(--fg);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--bg-inset) 70%, transparent);
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.toast.toast-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.toast.toast-success {
+  border-left-color: var(--green);
+}
+.toast.toast-error {
+  border-left-color: var(--red);
 }

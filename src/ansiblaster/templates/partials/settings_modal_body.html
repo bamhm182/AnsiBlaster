@@ -1,14 +1,20 @@
-<!-- Two tabs, switched purely client-side (switchSettingsTab() in index.html) -- this whole
+<!-- Two tabs, switched purely client-side (switchSettingsTab() in base.html) -- this whole
      fragment gets swapped wholesale on every mutating action below (add/save/delete an
-     override, save host settings), so index.html re-applies whichever tab was last active
-     right after each swap rather than always resetting to the first one. -->
+     override, save host settings), so base.html re-applies whichever tab (and, for Role
+     Variables, filter query) was last active right after each swap rather than always
+     resetting to the first one/an empty filter. -->
 <div class="settings-tabs">
   <button type="button" class="settings-tab active" data-settings-tab="role-variables">Role Variables</button>
   <button type="button" class="settings-tab" data-settings-tab="host-variables">Host Variables</button>
 </div>
 
+<!-- Role Variables tab is its own fixed-top/scrolling-middle/fixed-bottom flex column (see
+     style.css's [data-settings-content="role-variables"] rules) -- a long override list
+     shouldn't push the "Save Role Variables" button or the "add a new one" fields below the
+     fold, and shouldn't force the whole tab (heading/hint/filter included) to scroll along
+     with it either. -->
 <div class="settings-tab-content" data-settings-content="role-variables">
-  <section class="settings-section">
+  <div class="settings-role-vars-fixed-top settings-section">
     <h3>Role Variable Defaults</h3>
     <p class="settings-hint">
       Overrides the default value autofilled for any role variable of this name (declared via a
@@ -16,15 +22,26 @@
       scoped to one role. Also reachable per-variable from the Deploy column's "Save as Default"
       button next to each variable field.
     </p>
+    <input
+      type="search"
+      class="fuzzy-filter"
+      id="settings-var-filter"
+      data-filter-target="#settings-var-list"
+      placeholder="Filter variables&hellip;"
+      aria-label="Filter role variables"
+    >
+  </div>
 
-    <!-- One shared "Save Role Variables" button for every existing override, rather than a
-         save button per row (see routes/settings.py's save_role_variable_overrides_bulk()) --
-         each row's input is named value[<name>], parsed bracket-notation-style the same way
-         routes/runs.py's vars[<role>][<var_name>] fields already are. -->
-    <form hx-post="settings/role-variables/bulk" hx-target="#settings-modal-body" hx-swap="innerHTML">
+  <!-- Only this list scrolls. The form wraps just the list (it's what collects every row's
+       value[<name>] field on submit) -- the actual submit button lives below, outside the
+       scrolling/form markup, associated back to this form via the HTML5 form="..." attribute
+       (same technique role_list.html's checkboxes already use for #apply-form, which likewise
+       lives in a different part of the DOM from its own submit button). -->
+  <form id="settings-var-bulk-form" hx-post="settings/role-variables/bulk" hx-target="#settings-modal-body" hx-swap="innerHTML">
+    <div class="settings-var-list-scroll">
       <div class="settings-var-list" id="settings-var-list">
         {% for name, value in role_variable_overrides.items() %}
-          <div class="settings-var-row">
+          <div class="settings-var-row" data-filter-name="{{ name }}">
             <span class="settings-var-name">{{ name }}</span>
             <input
               type="text"
@@ -47,10 +64,13 @@
           <p class="empty-hint">No role variable overrides saved yet.</p>
         {% endfor %}
       </div>
-      {% if role_variable_overrides %}
-        <button type="submit" class="apply-button">Save Role Variables</button>
-      {% endif %}
-    </form>
+    </div>
+  </form>
+
+  <div class="settings-role-vars-fixed-bottom">
+    {% if role_variable_overrides %}
+      <button type="submit" form="settings-var-bulk-form" class="apply-button">Save Role Variables</button>
+    {% endif %}
 
     <!-- Adding a new override is its own small, separate action (there's no existing value to
          bulk-save alongside yet) -- reuses the single-override POST (see routes/settings.py's
@@ -61,7 +81,7 @@
       <input type="text" name="value" class="settings-var-value" placeholder="Value" aria-label="New variable value">
       <button type="submit" class="icon-button" title="Add variable override" aria-label="Add variable override">+</button>
     </form>
-  </section>
+  </div>
 </div>
 
 <div class="settings-tab-content" data-settings-content="host-variables" hidden>

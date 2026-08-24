@@ -157,3 +157,27 @@ def test_role_variable_row_has_no_per_row_save_button(client):
     # longer carry their own submit button.
     assert "Save Role Variables" in response.text
     assert 'title="Save mysql_port"' not in response.text
+
+
+def test_settings_modal_has_role_variable_filter_input(client):
+    response = client.get("/settings")
+    assert 'id="settings-var-filter"' in response.text
+    assert 'data-filter-target="#settings-var-list"' in response.text
+
+
+def test_role_variable_row_has_filter_name_attribute(client):
+    client.post("/settings/role-variables", data={"name": "mysql_port", "value": "3306"})
+    response = client.get("/settings")
+    assert 'data-filter-name="mysql_port"' in response.text
+
+
+def test_role_variable_list_is_in_its_own_scroll_wrapper_outside_the_save_button(client):
+    client.post("/settings/role-variables", data={"name": "mysql_port", "value": "3306"})
+    response = client.get("/settings")
+    # The scrollable list wrapper (and the form collecting its inputs) close *before* the
+    # fixed-bottom Save button/add-new-variable fields appear -- i.e. the button is not nested
+    # inside the scrolling region.
+    scroll_start = response.text.index('class="settings-var-list-scroll"')
+    save_button_index = response.text.index(">Save Role Variables<")
+    add_new_index = response.text.index('class="settings-var-row settings-var-row-new"')
+    assert scroll_start < save_button_index < add_new_index
