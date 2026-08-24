@@ -74,6 +74,9 @@ select {
 
 header {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   background: var(--bg-elevated);
   border-bottom: 1px solid var(--bg-inset);
   padding: 0.5rem 1rem;
@@ -90,6 +93,10 @@ header h1 {
 header h1::before {
   content: "⚡ ";
   color: var(--accent);
+}
+
+.settings-cog-button {
+  font-size: 1.05rem;
 }
 
 /* ---------- Overall shell ---------- */
@@ -410,6 +417,41 @@ body.is-resizing-deploy .deploy-resizer {
   accent-color: var(--accent);
 }
 .deploy-var-required {
+  color: var(--red);
+}
+
+/* Input + "Save as Default" button share a row (see index.html's buildVarRow()) -- the input
+   keeps its existing full-width styling via flex:1 instead of width:100%, so the button next
+   to it doesn't get pushed onto its own line. */
+.deploy-var-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+/* Specificity needs to beat the existing ".deploy-var-row input:not([type=checkbox])" rule's
+   width: 100% above (0,2,1) -- otherwise that wins by source-order-independent specificity and
+   the input ignores its flex-basis, pushing the save button off onto its own line. */
+.deploy-var-row .deploy-var-input-row input:not([type="checkbox"]) {
+  width: auto;
+  flex: 1;
+  min-width: 0;
+}
+.save-default-button {
+  flex: 0 0 auto;
+  /* Hover/focus-revealed, same treatment as .eyeball-button elsewhere -- keeps the Variables
+     area from reading as button-cluttered when nothing's being interacted with. */
+  visibility: hidden;
+}
+.deploy-var-row:hover .save-default-button,
+.save-default-button:focus-visible {
+  visibility: visible;
+}
+.save-default-button.save-default-success {
+  visibility: visible;
+  color: var(--green);
+}
+.save-default-button.save-default-error {
+  visibility: visible;
   color: var(--red);
 }
 
@@ -998,7 +1040,7 @@ body.is-resizing {
   white-space: nowrap;
 }
 
-#bottom-panel [hx-get="/runs"] {
+#bottom-panel [hx-get="runs"] {
   flex: 0 0 auto;
   margin: 0.5rem 0.85rem;
   align-self: flex-start;
@@ -1010,7 +1052,134 @@ body.is-resizing {
   cursor: pointer;
   font-size: 0.75rem;
 }
-#bottom-panel [hx-get="/runs"]:hover {
+#bottom-panel [hx-get="runs"]:hover {
   color: var(--fg);
   border-color: var(--accent);
+}
+
+/* ---------- Settings modal ---------- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg-inset) 70%, transparent);
+}
+.modal-overlay[hidden] {
+  display: none;
+}
+
+.modal-box {
+  display: flex;
+  flex-direction: column;
+  width: min(34rem, 92vw);
+  max-height: 85vh;
+  background: var(--bg-sidebar);
+  border: 1px solid var(--selection);
+  border-radius: 6px;
+  box-shadow: 0 10px 40px color-mix(in srgb, var(--bg-inset) 60%, transparent);
+}
+
+.modal-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 0.9rem;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--bg-inset);
+  border-radius: 6px 6px 0 0;
+}
+.modal-header h2 {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-muted);
+}
+
+.modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.85rem 0.9rem;
+}
+
+.settings-section {
+  margin-bottom: 1.25rem;
+}
+.settings-section:last-child {
+  margin-bottom: 0;
+}
+.settings-section h3 {
+  margin: 0 0 0.3rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-muted);
+}
+.settings-hint {
+  margin: 0 0 0.6rem;
+  font-size: 0.75rem;
+  color: var(--fg-muted);
+  line-height: 1.4;
+}
+.settings-hint code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.settings-var-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.settings-var-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.settings-var-name,
+.settings-var-name-input {
+  flex: 1;
+  min-width: 0;
+}
+.settings-var-name {
+  color: var(--cyan);
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-var-value,
+.settings-var-name-input {
+  padding: 0.3rem 0.5rem;
+  background: var(--bg);
+  border: 1px solid var(--bg-inset);
+  border-radius: 4px;
+  color: var(--fg);
+  font-size: 0.82rem;
+}
+.settings-var-value {
+  flex: 1;
+  min-width: 0;
+}
+.settings-var-value:focus,
+.settings-var-name-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.settings-var-row-new {
+  border-top: 1px solid var(--bg-inset);
+  padding-top: 0.5rem;
+  margin-top: 0.1rem;
+}
+
+.settings-host-form .apply-button {
+  margin-top: 0.2rem;
 }

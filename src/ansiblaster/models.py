@@ -8,6 +8,7 @@ from __future__ import annotations
 import enum
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import JSON, DateTime, Enum, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -83,3 +84,24 @@ class Run(Base):
             f"Run(id={self.id!r}, target={self.target_user}@{self.target_host}:"
             f"{self.target_port}, os={self.target_os}, status={self.status})"
         )
+
+
+class Setting(Base):
+    """Generic persisted key -> JSON value store backing the Settings popup (role-variable
+    default overrides, host credential overrides, and anything else added here in the future).
+
+    A single flat table, rather than a bespoke one per setting kind, deliberately sidesteps
+    this project's lack of a schema-migration framework (see db.py's init_db() and CLAUDE.md's
+    "no migration framework" caveat) -- a new *kind* of setting only ever needs a new key
+    convention, never a new column or table. See settings_store.py for the key-naming
+    conventions ("role_variable:<name>", "host:<preset>:<field>") and the get/set/delete
+    helpers built on top of this model; nothing outside that module should query it directly.
+    """
+
+    __tablename__ = "settings"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[Any] = mapped_column(JSON, nullable=False)
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return f"Setting(key={self.key!r}, value={self.value!r})"

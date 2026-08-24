@@ -1,0 +1,110 @@
+from __future__ import annotations
+
+import html
+import re
+
+from tests.conftest import make_role
+
+
+def _input_value(text: str, name: str) -> str:
+    match = re.search(rf'name="{re.escape(name)}"\s*\n?\s*value="([^"]*)"', text)
+    assert match, f"no input named {name!r} found"
+    return match.group(1)
+
+
+def test_get_settings_empty(client):
+    response = client.get("/settings")
+    assert response.status_code == 200
+    assert "No role variable overrides saved yet." in response.text
+    assert "SSH" in response.text and "WinRM" in response.text and "PSRP" in response.text
+
+
+def test_save_role_variable_override_appears_in_modal(client):
+    response = client.post("/settings/role-variables", data={"name": "mysql_port", "value": "3306"})
+    assert response.status_code == 200
+    assert "mysql_port" in response.text
+    assert 'value="3306"' in response.text
+
+
+def test_save_role_variable_override_is_type_coerced(client):
+    # 3306 is saved as an int (via yaml.safe_load), not a string -- confirmed by checking it
+    # actually feeds into discover_role_variables()'s merged output as a real default, not by
+    # inspecting the DB directly (see test_routes_roles.py's own equivalent check below).
+    client.post("/settings/role-variables", data={"name": "port", "value": "3306"})
+    response = client.get("/settings")
+    assert 'value="3306"' in response.text
+
+
+def test_save_role_variable_override_rejects_blank_name(client):
+    response = client.post("/settings/role-variables", data={"name": "  ", "value": "x"})
+    assert response.status_code == 400
+
+
+def test_role_variable_overrides_sorted_alphabetically(client):
+    client.post("/settings/role-variables", data={"name": "zeta", "value": "1"})
+    client.post("/settings/role-variables", data={"name": "alpha", "value": "2"})
+    response = client.get("/settings")
+    assert response.text.index("alpha") < response.text.index("zeta")
+
+
+def test_delete_role_variable_override(client):
+    client.post("/settings/role-variables", data={"name": "mysql_port", "value": "3306"})
+    response = client.request("DELETE", "/settings/role-variables/mysql_port")
+    assert response.status_code == 200
+    assert "mysql_port" not in response.text
+    assert "No role variable overrides saved yet." in response.text
+
+
+def test_delete_role_variable_override_that_does_not_exist_is_a_no_op(client):
+    response = client.request("DELETE", "/settings/role-variables/does-not-exist")
+    assert response.status_code == 200
+
+
+def test_save_host_settings_stores_override_and_shows_it_as_value(client):
+    response = client.post(
+        "/settings/host", data={"ssh_username": "deploy", "ssh_password": "hunter2"}
+    )
+    assert response.status_code == 200
+    assert _input_value(response.text, "ssh_username") == "deploy"
+
+
+def test_save_host_settings_blank_field_clears_existing_override(client):
+    client.post("/settings/host", data={"ssh_username": "deploy"})
+    response = client.post("/settings/host", data={"ssh_username": ""})
+    assert response.status_code == 200
+    assert _input_value(response.text, "ssh_username") == ""
+
+
+def test_save_host_settings_presets_are_independent(client):
+    client.post("/settings/host", data={"ssh_username": "deploy"})
+    response = client.get("/settings")
+    assert _input_value(response.text, "ssh_username") == "deploy"
+    assert _input_value(response.text, "winrm_username") == ""
+    assert _input_value(response.text, "psrp_username") == ""
+
+
+def test_role_variable_override_merges_into_get_roles_data_vars(client, tmp_path):
+    make_role(tmp_path, "apache", argument_specs={"port": {"type": "int", "default": 80}})
+    client.post("/settings/role-variables", data={"name": "port", "value": "8080"})
+    response = client.get("/roles")
+    assert response.status_code == 200
+    # data-vars is JSON embedded in an HTML attribute -- its quotes are entity-escaped
+    # (&#34;), so unescape before checking the JSON shape.
+    unescaped = html.unescape(response.text)
+    assert '"default": 8080' in unescaped
+    assert '"default": 80}' not in unescaped and '"default": 80,' not in unescaped
+
+
+def test_role_variable_override_merges_into_index_page_data_vars(client, tmp_path):
+    make_role(tmp_path, "apache", argument_specs={"port": {"type": "int", "default": 80}})
+    client.post("/settings/role-variables", data={"name": "port", "value": "8080"})
+    response = client.get("/")
+    assert response.status_code == 200
+    assert '"default": 8080' in html.unescape(response.text)
+
+
+def test_host_override_merges_into_index_page_defaults(client):
+    client.post("/settings/host", data={"ssh_username": "deploy-override"})
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "deploy-override" in response.text

@@ -343,6 +343,11 @@
   // server-rendered, so it can't include the partial's markup into its own output directly.
   const EYE_ICON_SVG = `{% include "partials/eye_icon.html" %}`;
 
+  // Same reasoning as EYE_ICON_SVG above -- shared with settings_modal_body.html's own "Save"
+  // buttons (server-rendered there, so that one just includes the partial directly), needed as
+  // a JS constant here only because buildVarRow() below builds its row client-side.
+  const SAVE_ICON_SVG = `{% include "partials/save_icon.html" %}`;
+
   // The Deploy column's top section is a read-only reflection of whatever's checked in the
   // Roles column -- removal happens by unchecking the box there, not by interacting with this
   // list directly. Its eyeball buttons are the one exception: viewing a role's files here
@@ -451,8 +456,51 @@
     }
     label.setAttribute("for", input.id);
 
-    row.append(label, input);
+    // "Save as Default" -- persists this field's *current* value as a Settings-popup override
+    // for every role's "varName" variable (overrides are global by name, not per-role -- see
+    // CLAUDE.md's "Settings" section), via saveVariableAsDefault() below. Hover/focus-revealed
+    // like the eyeball buttons elsewhere, so the row doesn't read as button-cluttered at rest.
+    const saveButton = document.createElement("button");
+    saveButton.type = "button";
+    saveButton.className = "icon-button save-default-button";
+    saveButton.title = `Save "${varName}" as default`;
+    saveButton.setAttribute("aria-label", `Save ${varName} as default`);
+    saveButton.innerHTML = SAVE_ICON_SVG;
+    saveButton.addEventListener("click", () => saveVariableAsDefault(varName, input, saveButton));
+
+    const inputRow = document.createElement("div");
+    inputRow.className = "deploy-var-input-row";
+    inputRow.append(input, saveButton);
+
+    row.append(label, inputRow);
     return row;
+  }
+
+  // ---------------------------------------------------------------------
+  // "Save as Default" (see buildVarRow() above): fires a background POST straight to
+  // routes/settings.py, independent of whether the Settings modal is even open -- there's
+  // nothing here to swap into, just a fire-and-confirm write. A checkbox's current value reads
+  // as "true"/"false" (matching collectCurrentVarValues()'s own convention), everything else
+  // as its plain input value; the server re-parses that same text via yaml.safe_load() either
+  // way (settings_store.parse_override_value()), same as routes/runs.py's own variable
+  // coercion, so a numeric/boolean-looking value still round-trips as its real type.
+  // ---------------------------------------------------------------------
+  async function saveVariableAsDefault(varName, input, button) {
+    const value = input.type === "checkbox" ? String(input.checked) : input.value;
+    button.classList.remove("save-default-error");
+    try {
+      const response = await fetch("settings/role-variables", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ name: varName, value }),
+      });
+      if (!response.ok) throw new Error(`Request failed (${response.status})`);
+      button.classList.add("save-default-success");
+      setTimeout(() => button.classList.remove("save-default-success"), 1200);
+    } catch (err) {
+      button.classList.add("save-default-error");
+      setTimeout(() => button.classList.remove("save-default-error"), 1200);
+    }
   }
 
   function syncRoleVariables(overrideValues) {

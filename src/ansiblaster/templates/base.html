@@ -10,9 +10,53 @@
 <body>
   <header>
     <h1>AnsiBlaster</h1>
+    <button
+      type="button"
+      class="icon-button settings-cog-button"
+      id="settings-cog-button"
+      title="Settings"
+      aria-label="Open settings"
+      hx-get="settings"
+      hx-target="#settings-modal-body"
+      hx-swap="innerHTML"
+      onclick="document.getElementById('settings-modal-overlay').hidden = false;"
+    >{% include "partials/settings_icon.html" %}</button>
   </header>
   <main>
     {% block content %}{% endblock %}
   </main>
+
+  <!-- Settings popup: htmx-loaded (GET /settings, see routes/settings.py) into #settings-
+       modal-body every time it's opened, so it always reflects whatever was last saved --
+       nothing here is server-rendered on the initial page load. See CLAUDE.md's "Settings"
+       section. -->
+  <div class="modal-overlay" id="settings-modal-overlay" hidden>
+    <div class="modal-box" role="dialog" aria-modal="true" aria-label="Settings">
+      <div class="modal-header">
+        <h2>Settings</h2>
+        <button
+          type="button"
+          class="icon-button"
+          onclick="document.getElementById('settings-modal-overlay').hidden = true;"
+          title="Close settings"
+          aria-label="Close settings"
+        >&times;</button>
+      </div>
+      <div class="modal-body" id="settings-modal-body">
+        <p class="empty-hint">Loading&hellip;</p>
+      </div>
+    </div>
+  </div>
+  <script>
+    // Generic modal chrome (click-outside / Escape to close) -- kept here rather than in
+    // index.html's own script block since the modal itself lives in this shared shell, not in
+    // any one page's content block.
+    document.getElementById("settings-modal-overlay").addEventListener("click", (evt) => {
+      if (evt.target.id === "settings-modal-overlay") evt.currentTarget.hidden = true;
+    });
+    document.addEventListener("keydown", (evt) => {
+      if (evt.key === "Escape") document.getElementById("settings-modal-overlay").hidden = true;
+    });
+  </script>
 </body>
 </html>
