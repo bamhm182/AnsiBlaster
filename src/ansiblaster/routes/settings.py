@@ -11,6 +11,8 @@ whatever was just saved/removed without a full page reload -- htmx swaps it stra
 
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 
 from ansiblaster.db import session_scope
@@ -29,6 +31,12 @@ from ansiblaster.settings_store import (
 )
 
 router = APIRouter(prefix="/settings")
+
+# Matches the value[<name>] bracket-notation field naming the Role Variables tab's bulk-save
+# form uses for its existing rows (see settings_modal_body.html) -- same convention as
+# routes/runs.py's vars[<role>][<var_name>], just one level shallower since there's no role to
+# scope by here.
+_BULK_VALUE_KEY_RE = re.compile(r"^value\[([^\]]+)\]$")
 
 
 def _render_modal_body(request: Request, settings: Settings, session):
@@ -79,6 +87,26 @@ async def save_role_variable_override(
         raise HTTPException(status_code=400, detail="Variable name is required.")
     with session_scope(session_factory) as session:
         set_role_variable_override(session, name, parse_override_value(value))
+        return _render_modal_body(request, settings, session)
+
+
+@router.post("/role-variables/bulk")
+async def save_role_variable_overrides_bulk(
+    request: Request,
+    settings: Settings = Depends(get_app_settings),
+    session_factory=Depends(get_session_factory),
+):
+    """Save every existing role-variable override at once, from the Role Variables tab's single
+    "Save Role Variables" button -- there's no per-row save button (see CLAUDE.md's "Settings
+    popup" section). Only touches names already present as a value[<name>] field; adding a
+    brand-new name is still its own small action (save_role_variable_override() above)."""
+    form = await request.form()
+    with session_scope(session_factory) as session:
+        for key, value in form.multi_items():
+            match = _BULK_VALUE_KEY_RE.match(key)
+            if not match:
+                continue
+            set_role_variable_override(session, match.group(1), parse_override_value(str(value)))
         return _render_modal_body(request, settings, session)
 
 

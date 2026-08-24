@@ -497,10 +497,40 @@
       if (!response.ok) throw new Error(`Request failed (${response.status})`);
       button.classList.add("save-default-success");
       setTimeout(() => button.classList.remove("save-default-success"), 1200);
+      // Every role checkbox's data-vars (the source buildVarRow() falls back to as a
+      // variable's "default") is a snapshot baked in at the last GET /roles -- refresh it now
+      // so this override actually takes effect the next time any role is (re)checked, without
+      // requiring a manual Roles-panel refresh or a full page reload first.
+      refreshRoleList();
     } catch (err) {
       button.classList.add("save-default-error");
       setTimeout(() => button.classList.remove("save-default-error"), 1200);
     }
+  }
+
+  // ---------------------------------------------------------------------
+  // Re-fetches the Roles column's checklist (GET /roles) in place, so every checkbox's baked-in
+  // data-vars picks up any role-variable-default override just saved -- either here (via
+  // saveVariableAsDefault() above) or from the Settings modal itself (see the
+  // #settings-modal-body htmx:afterRequest listener below). Preserves whatever's currently
+  // checked/typed across the refresh: syncRoleVariables() already prefers an explicit
+  // "previous" value over a role's own declared default (see its own comment above), so passing
+  // collectCurrentVarValues()'s snapshot through re-establishes any in-progress, not-yet-saved
+  // edits exactly as before -- only a variable with no in-progress edit picks up its fresh
+  // (possibly now-overridden) default.
+  // ---------------------------------------------------------------------
+  async function refreshRoleList() {
+    const checkedRoles = Array.from(document.querySelectorAll('input[name="roles"]:checked')).map(
+      (el) => el.value
+    );
+    const previousVars = collectCurrentVarValues();
+    await htmx.ajax("GET", "roles", "#role-list");
+    checkedRoles.forEach((role) => {
+      const checkbox = document.getElementById("role-" + role);
+      if (checkbox) checkbox.checked = true;
+    });
+    syncSelectedRolesSummary();
+    syncRoleVariables(previousVars);
   }
 
   function syncRoleVariables(overrideValues) {

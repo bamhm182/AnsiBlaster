@@ -19,7 +19,7 @@
       hx-get="settings"
       hx-target="#settings-modal-body"
       hx-swap="innerHTML"
-      onclick="document.getElementById('settings-modal-overlay').hidden = false;"
+      onclick="openSettingsModal()"
     >{% include "partials/settings_icon.html" %}</button>
   </header>
   <main>
@@ -50,12 +50,63 @@
   <script>
     // Generic modal chrome (click-outside / Escape to close) -- kept here rather than in
     // index.html's own script block since the modal itself lives in this shared shell, not in
-    // any one page's content block.
+    // any one page's content block. This whole script block runs *after* the modal markup
+    // above it, which matters: index.html's own script executes earlier (it's inside <main>,
+    // which comes before this div in the document), so a lookup like
+    // document.getElementById("settings-modal-body") would still be null there -- the element
+    // doesn't exist in the DOM yet at that point in parsing.
     document.getElementById("settings-modal-overlay").addEventListener("click", (evt) => {
       if (evt.target.id === "settings-modal-overlay") evt.currentTarget.hidden = true;
     });
     document.addEventListener("keydown", (evt) => {
       if (evt.key === "Escape") document.getElementById("settings-modal-overlay").hidden = true;
+    });
+
+    // ---------------------------------------------------------------------
+    // Settings modal: Role Variables / Host Variables tabs, switched purely client-side (same
+    // technique as index.html's switchBottomTab()) -- except #settings-modal-body's *entire*
+    // innerHTML is replaced by htmx on every add/save/delete inside it (see routes/
+    // settings.py), which would otherwise silently reset the visible tab back to whichever one
+    // settings_modal_body.html renders by default. activeSettingsTab tracks the last-clicked
+    // tab across those swaps; the delegated click listener and the htmx:afterSwap
+    // re-application below both survive them (only descendants of #settings-modal-body are
+    // replaced, not the element itself).
+    // ---------------------------------------------------------------------
+    let activeSettingsTab = "role-variables";
+
+    // Called by the cog button above -- resets to the default tab on every fresh open (the
+    // overlay itself is unhidden here too, so both happen from one place).
+    function openSettingsModal() {
+      activeSettingsTab = "role-variables";
+      document.getElementById("settings-modal-overlay").hidden = false;
+    }
+
+    function switchSettingsTab(name) {
+      activeSettingsTab = name;
+      document.querySelectorAll(".settings-tab").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.settingsTab === name);
+      });
+      document.querySelectorAll(".settings-tab-content").forEach((el) => {
+        el.hidden = el.dataset.settingsContent !== name;
+      });
+    }
+
+    const settingsModalBody = document.getElementById("settings-modal-body");
+    settingsModalBody.addEventListener("click", (evt) => {
+      const tab = evt.target.closest(".settings-tab");
+      if (tab) switchSettingsTab(tab.dataset.settingsTab);
+    });
+    settingsModalBody.addEventListener("htmx:afterSwap", () => switchSettingsTab(activeSettingsTab));
+
+    // A mutating request from inside the modal (add/save/delete a role-variable override, save
+    // host settings) may have changed a role-variable default -- refresh the Roles column's
+    // data-vars the same way index.html's saveVariableAsDefault() does, so it takes effect
+    // immediately rather than only after the next manual Roles refresh or full page reload.
+    // refreshRoleList() is defined in index.html's own script, which -- unlike this one --
+    // already ran by the time this listener can possibly fire, so it's safe to call here. The
+    // initial GET that opens the modal is excluded (nothing changed yet).
+    settingsModalBody.addEventListener("htmx:afterRequest", (evt) => {
+      if (evt.detail.requestConfig?.verb !== "get") refreshRoleList();
     });
   </script>
 </body>

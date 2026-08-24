@@ -7,7 +7,9 @@ from tests.conftest import make_role
 
 
 def _input_value(text: str, name: str) -> str:
-    match = re.search(rf'name="{re.escape(name)}"\s*\n?\s*value="([^"]*)"', text)
+    # Tolerant of any attributes (e.g. class=, placeholder=) sitting between name= and value=,
+    # and of the tag's attributes wrapping onto multiple lines.
+    match = re.search(rf'name="{re.escape(name)}"[\s\S]*?value="([^"]*)"', text)
     assert match, f"no input named {name!r} found"
     return match.group(1)
 
@@ -108,3 +110,50 @@ def test_host_override_merges_into_index_page_defaults(client):
     response = client.get("/")
     assert response.status_code == 200
     assert "deploy-override" in response.text
+
+
+def test_bulk_save_role_variable_overrides_updates_multiple_at_once(client):
+    client.post("/settings/role-variables", data={"name": "alpha", "value": "1"})
+    client.post("/settings/role-variables", data={"name": "beta", "value": "2"})
+
+    response = client.post(
+        "/settings/role-variables/bulk", data={"value[alpha]": "10", "value[beta]": "20"}
+    )
+    assert response.status_code == 200
+    assert _input_value(response.text, "value[alpha]") == "10"
+    assert _input_value(response.text, "value[beta]") == "20"
+
+
+def test_bulk_save_role_variable_overrides_ignores_unrecognized_fields(client):
+    client.post("/settings/role-variables", data={"name": "alpha", "value": "1"})
+    response = client.post(
+        "/settings/role-variables/bulk",
+        data={"value[alpha]": "10", "not_a_bracket_field": "ignored"},
+    )
+    assert response.status_code == 200
+    assert _input_value(response.text, "value[alpha]") == "10"
+
+
+def test_bulk_save_role_variable_overrides_type_coerced(client, tmp_path):
+    make_role(tmp_path, "apache", argument_specs={"port": {"type": "int", "default": 80}})
+    client.post("/settings/role-variables", data={"name": "port", "value": "1"})
+    client.post("/settings/role-variables/bulk", data={"value[port]": "9090"})
+    response = client.get("/roles")
+    assert '"default": 9090' in html.unescape(response.text)
+
+
+def test_settings_modal_has_role_and_host_tabs(client):
+    response = client.get("/settings")
+    assert 'data-settings-tab="role-variables"' in response.text
+    assert 'data-settings-tab="host-variables"' in response.text
+    assert 'data-settings-content="role-variables"' in response.text
+    assert 'data-settings-content="host-variables"' in response.text
+
+
+def test_role_variable_row_has_no_per_row_save_button(client):
+    client.post("/settings/role-variables", data={"name": "mysql_port", "value": "3306"})
+    response = client.get("/settings")
+    # The bulk-save form still exists (Save Role Variables), but individual rows should no
+    # longer carry their own submit button.
+    assert "Save Role Variables" in response.text
+    assert 'title="Save mysql_port"' not in response.text

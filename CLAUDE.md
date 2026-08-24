@@ -416,33 +416,46 @@ logs) is persisted so past runs can be reviewed later.
 Distinct from the static, config-file-driven "Settings" above (same name, different thing --
 this is the gear-icon popup in the app's own UI, not `config.yaml`): a small set of **runtime,
 DB-backed overrides**, editable from a modal opened via a cog button in the title bar (top
-right, next to "AnsiBlaster" -- `base.html`), for two things:
+right, next to "AnsiBlaster" -- `base.html`). The modal has two tabs, **Role Variables** and
+**Host Variables** (`.settings-tab`/`.settings-tab-content`, switched purely client-side by
+`switchSettingsTab()` -- same technique as the bottom panel's Log/History/Viewer tabs):
 
-- **Role variable defaults**, overriding what a role variable (declared via a role's
+- **Role Variables tab** -- overrides for what a role variable (declared via a role's
   `meta/argument_specs.yml` -- see "Role variables (argument_specs)" above) autofills to when
   its role is checked. Overrides are keyed **globally by variable name, not per role** -- a
   saved `mysql_port` override applies to every role that happens to declare a variable named
-  `mysql_port`, matching the popup's own "sorted alphabetically by variable name" / "+ to add a
-  variable by name" design, which has no notion of "for this role only". Reachable two ways:
-  from inside the popup itself (add/edit/remove any override by name), or from a "Save as
-  Default" icon button next to each variable field in the Deploy column's Variables area
-  (`saveVariableAsDefault()` in `index.html`), which saves that field's *current* value as the
-  new global default for its variable name with no need to open the popup at all.
-- **Host defaults**: username/password overrides per port preset (`ssh`/`winrm`/`psrp` -- the
-  same three `config.yaml` already has under `defaults.*`, see "Configuration file" below).
-  Leaving a field blank in the popup means "no override, fall back to `config.yaml`'s value"
-  (shown as that field's placeholder) rather than "override it with an explicit blank" --
-  submitting a blank field clears any existing override for that exact preset+field rather than
-  saving an empty string over a real configured default.
+  `mysql_port`, matching the tab's own "sorted alphabetically by variable name" / "+ to add a
+  variable by name" design, which has no notion of "for this role only". Existing overrides are
+  listed one per line (each just a name + its value, styled like a single-line "row" -- no
+  per-row save button) under a single **"Save Role Variables"** button that saves every edited
+  row's current value at once (`POST /settings/role-variables/bulk`, fields named
+  `value[<name>]`, same bracket-notation convention `routes/runs.py`'s own
+  `vars[<role>][<var_name>]` fields already use); adding a brand-new override by name is its own
+  separate small "+" action instead, since there's no existing value to bulk-save alongside yet
+  (`POST /settings/role-variables`, also what a Deploy-column "Save as Default" click hits --
+  see below). Removing one is still a per-row action (`DELETE /settings/role-variables/{name}`).
+- **Host Variables tab** -- username/password overrides per port preset (`ssh`/`winrm`/`psrp` --
+  the same three `config.yaml` already has under `defaults.*`, see "Configuration file" below),
+  each field its own full-width line (the same row shape the Role Variables tab's list uses,
+  not the Deploy column's side-by-side username/password pairing). Leaving a field blank means
+  "no override, fall back to `config.yaml`'s value" (shown as that field's placeholder) rather
+  than "override it with an explicit blank" -- submitting a blank field clears any existing
+  override for that exact preset+field rather than saving an empty string over a real
+  configured default. Saved all at once via a single **"Save Host Settings"** button
+  (`POST /settings/host`).
 
-Both are backed by a **single generic key/value `Setting` table** (`key: str` PK, `value: JSON`
--- see `models.py`) rather than a bespoke table per override kind, specifically to sidestep this
-project's lack of a schema-migration framework (see the `runs` table's no-migration-framework
-note below): a new *kind* of setting only ever needs a new key-naming convention, never a new
-column or table. `settings_store.py` owns the key conventions
-(`"role_variable:<name>"` / `"host:<preset>:<field>"`) and the get/set/delete helpers; nothing
-outside that module should query the `Setting` table directly. It also has the merge helpers
-that layer these overrides on top of their non-DB source of truth --
+Each variable field in the Deploy column's Variables area also carries its own "Save as
+Default" icon button (`saveVariableAsDefault()` in `index.html`), saving that field's *current*
+value as the new global default for its variable name with no need to open the popup at all.
+
+Both override kinds are backed by a **single generic key/value `Setting` table** (`key: str`
+PK, `value: JSON` -- see `models.py`) rather than a bespoke table per override kind,
+specifically to sidestep this project's lack of a schema-migration framework (see the `runs`
+table's no-migration-framework note below): a new *kind* of setting only ever needs a new
+key-naming convention, never a new column or table. `settings_store.py` owns the key
+conventions (`"role_variable:<name>"` / `"host:<preset>:<field>"`) and the get/set/delete
+helpers; nothing outside that module should query the `Setting` table directly. It also has the
+merge helpers that layer these overrides on top of their non-DB source of truth --
 `apply_role_variable_overrides()` (over `discover_role_variables()`'s output) and
 `apply_host_overrides()` (over `settings.defaults`) -- a DB override always wins over the
 matching `config.yaml`/argument_specs value when both exist. Values are parsed with
@@ -459,19 +472,47 @@ and `routes/pages.py` also swaps what it passes to the template as `defaults` fo
 `apply_host_overrides(settings.defaults, ...)`'s merged result -- everywhere else in the
 codebase (`index.html`'s `defaults.ssh.username` etc., `OS_DEFAULTS` in its inline script) reads
 that same `defaults` context variable unchanged, with no awareness an override might be
-involved. `routes/settings.py` is the popup's own backend (`GET /settings` renders the modal's
-body fragment, `partials/settings_modal_body.html`; `POST /settings/role-variables` and
-`DELETE /settings/role-variables/{name}` add/edit or remove one override; `POST /settings/host`
+involved. But that merge only happens when a role checkbox is actually (re)rendered -- its
+`data-vars` attribute is a snapshot baked in at the last `GET /roles`/`GET /`, not a live value
+-- so **every** action that can create or change an override (the modal's "Save Role
+Variables"/"+"/delete, and the Deploy column's own "Save as Default") also calls
+`refreshRoleList()` (`index.html`) afterwards: it re-fetches `GET /roles` in place via
+`htmx.ajax()`, then re-checks whatever roles were checked and re-applies
+`syncRoleVariables()` over whatever was already typed, so an override takes effect the moment
+you next check that role (even by unchecking and rechecking the *same* role right away) without
+needing a manual Roles-panel refresh or a full page reload first. For the modal specifically,
+this is wired generically rather than once per action: a `htmx:afterRequest` listener on
+`#settings-modal-body` calls `refreshRoleList()` after any non-GET request that fragment makes.
+
+`routes/settings.py` is the popup's own backend (`GET /settings` renders the modal's body
+fragment, `partials/settings_modal_body.html`; `POST /settings/role-variables` and
+`DELETE /settings/role-variables/{name}` add/edit or remove one override; `POST
+/settings/role-variables/bulk` saves every existing override at once; `POST /settings/host`
 saves the whole host-defaults form at once) -- every one of its routes returns that same
 fragment afresh (mirroring `routes/runs.py`'s re-fetch-and-re-render pattern for
 `run_detail.html`), so the modal reflects whatever was just saved/removed without a page reload;
 `base.html`'s cog button issues a plain `hx-get="settings"` into `#settings-modal-body` each
-time it's opened (nothing about the modal is server-rendered on initial page load) and toggles
-the overlay's `hidden` attribute via a small inline `onclick`. The cog and "Save as Default"
-icons are inline SVGs (`partials/settings_icon.html`, `partials/save_icon.html`), following the
-same `stroke="currentColor"` monochrome-icon precedent the eyeball button already established
-(see "Backend & UI" above) rather than a Unicode emoji glyph, which renders in color and
-inconsistently across platforms.
+time it's opened (nothing about the modal is server-rendered on initial page load) and calls
+`openSettingsModal()` (unhides the overlay, and resets the active tab to Role Variables). The
+cog and "Save as Default" icons are inline SVGs (`partials/settings_icon.html`,
+`partials/save_icon.html`), following the same `stroke="currentColor"` monochrome-icon
+precedent the eyeball button already established (see "Backend & UI" above) rather than a
+Unicode emoji glyph, which renders in color and inconsistently across platforms.
+
+Because `#settings-modal-body`'s content is swapped wholesale by htmx on every mutating action,
+its tab state (`activeSettingsTab`) has to survive that swap -- `switchSettingsTab()` is
+re-applied via a `htmx:afterSwap` listener rather than relying on whatever
+`settings_modal_body.html` renders as the default tab each time. All of this tab-switching (and
+`openSettingsModal()`, and the `htmx:afterRequest` → `refreshRoleList()` wiring above) lives in
+`base.html`'s own trailing `<script>` block, **not** `index.html`'s -- deliberately, and not
+just for the "modal chrome belongs with the modal markup" reasoning that already put the
+click-outside/Escape handling there. `index.html`'s script runs while parsing `<main>`, which
+comes *before* `base.html`'s modal `<div>`s in the document -- a `document.getElementById
+("settings-modal-body")` call from `index.html`'s script would find nothing yet and throw
+(`Cannot read properties of null`), silently breaking every inline `onclick` on the page after
+it, since a script-level exception aborts the rest of that `<script>` block. `refreshRoleList()`
+itself stays in `index.html` (it only touches elements already present inside `<main>`, and
+`base.html`'s later script calling an earlier-defined global function is the safe direction).
 
 ## Data model & routes
 
@@ -544,6 +585,7 @@ one column/table per override kind.
 | `GET /target/check-port` | JSON `{"open": bool, "banner": str \| null}` — quick, service-agnostic TCP reachability + banner check for the Deploy column's Status row (`host`/`port` query params) |
 | `GET /settings` | HTMX fragment — the Settings popup's body (`partials/settings_modal_body.html`), listing current role-variable-default and host-default overrides |
 | `POST /settings/role-variables` | Add or update one role-variable-default override (`name`, `value`); returns the refreshed popup body |
+| `POST /settings/role-variables/bulk` | Save every existing role-variable override at once (`value[<name>]` per row, from the Role Variables tab's single "Save Role Variables" button); returns the refreshed popup body |
 | `DELETE /settings/role-variables/{name}` | Remove one role-variable-default override; returns the refreshed popup body |
 | `POST /settings/host` | Save the whole host-defaults form at once (`{preset}_username`/`{preset}_password` for `ssh`/`winrm`/`psrp`; a blank field clears that override); returns the refreshed popup body |
 
@@ -667,13 +709,16 @@ src/ansiblaster/
 │   │                   # (argument_specs)") -- _parse_role_variables(), _coerce_role_variables()
 │   ├── target.py       # GET /target/check-port -- thin JSON wrapper around portcheck.py
 │   └── settings.py     # GET /settings, POST /settings/role-variables,
+│                       # POST /settings/role-variables/bulk,
 │                       # DELETE /settings/role-variables/{name}, POST /settings/host -- see
 │                       # "Settings popup". Every route returns the same
 │                       # partials/settings_modal_body.html fragment, freshly re-rendered
 ├── templates/
 │   ├── base.html         # Title bar (incl. the Settings popup's cog button) + the modal
-│   │                     # overlay shell itself (see "Settings popup") -- the only template
-│   │                     # other than index.html's own content block
+│   │                     # overlay shell itself, plus the modal's own tab-switching/
+│   │                     # refreshRoleList()-wiring script (see "Settings popup" for why that
+│   │                     # script lives here and not in index.html) -- the only template other
+│   │                     # than index.html's own content block
 │   ├── index.html       # 3-column workspace + bottom panel; owns nearly all client-side JS
 │   │                   # (fuzzy filter, playbook->checkbox, run tabs, EventSource management)
 │   └── partials/
@@ -683,11 +728,14 @@ src/ansiblaster/
 │       ├── file_browser.html   # Viewer tab: one role's/playbook's file list
 │       ├── file_content.html   # Viewer tab: one file's read-only content
 │       ├── eye_icon.html       # shared inline SVG for every eyeball view button
-│       ├── save_icon.html      # shared inline SVG for "Save as Default" (Deploy column) and
-│       │                       # the Settings popup's own per-override save buttons
+│       ├── save_icon.html      # shared inline SVG for the Deploy column's "Save as Default"
+│       │                       # buttons (the Settings popup itself has no per-row save
+│       │                       # buttons -- see "Settings popup")
 │       ├── settings_icon.html  # the title bar's cog button SVG
-│       ├── settings_modal_body.html  # the Settings popup's content -- GET /settings and
-│       │                             # every settings/* route's response (see "Settings popup")
+│       ├── settings_modal_body.html  # the Settings popup's content -- two tabs (Role
+│       │                             # Variables, Host Variables), rendered by GET /settings
+│       │                             # and every settings/* route's response (see "Settings
+│       │                             # popup")
 │       ├── run_list.html
 │       ├── run_row.html     # single history-list item; opened via a delegated fetch(),
 │       │                   # not hx-get (see "Backend & UI")

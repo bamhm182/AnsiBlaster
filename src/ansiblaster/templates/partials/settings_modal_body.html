@@ -1,82 +1,109 @@
-<section class="settings-section">
-  <h3>Role Variable Defaults</h3>
-  <p class="settings-hint">
-    Overrides the default value autofilled for any role variable of this name (declared via a
-    role's <code>meta/argument_specs.yml</code>), across every role that declares it -- not
-    scoped to one role. Also reachable per-variable from the Deploy column's "Save as Default"
-    button next to each variable field.
-  </p>
-  <div class="settings-var-list" id="settings-var-list">
-    {% for name, value in role_variable_overrides.items() %}
-      <form class="settings-var-row" hx-post="settings/role-variables" hx-target="#settings-modal-body" hx-swap="innerHTML">
-        <input type="hidden" name="name" value="{{ name }}">
-        <span class="settings-var-name">{{ name }}</span>
-        <input
-          type="text"
-          name="value"
-          class="settings-var-value"
-          value="{{ value if value is string else (value | tojson) }}"
-          aria-label="Value for {{ name }}"
-        >
-        <button type="submit" class="icon-button" title="Save {{ name }}" aria-label="Save {{ name }}">{% include "partials/save_icon.html" %}</button>
-        <button
-          type="button"
-          class="icon-button"
-          title="Remove {{ name }} override"
-          aria-label="Remove {{ name }} override"
-          hx-delete="settings/role-variables/{{ name }}"
-          hx-target="#settings-modal-body"
-          hx-swap="innerHTML"
-        >&times;</button>
-      </form>
-    {% else %}
-      <p class="empty-hint">No role variable overrides saved yet.</p>
-    {% endfor %}
+<!-- Two tabs, switched purely client-side (switchSettingsTab() in index.html) -- this whole
+     fragment gets swapped wholesale on every mutating action below (add/save/delete an
+     override, save host settings), so index.html re-applies whichever tab was last active
+     right after each swap rather than always resetting to the first one. -->
+<div class="settings-tabs">
+  <button type="button" class="settings-tab active" data-settings-tab="role-variables">Role Variables</button>
+  <button type="button" class="settings-tab" data-settings-tab="host-variables">Host Variables</button>
+</div>
 
-    <!-- Adding a new override reuses the same POST as editing an existing one (see routes/
-         settings.py's save_role_variable_override) -- an unrecognized name just becomes a new
-         row the next time this fragment is rendered. -->
+<div class="settings-tab-content" data-settings-content="role-variables">
+  <section class="settings-section">
+    <h3>Role Variable Defaults</h3>
+    <p class="settings-hint">
+      Overrides the default value autofilled for any role variable of this name (declared via a
+      role's <code>meta/argument_specs.yml</code>), across every role that declares it -- not
+      scoped to one role. Also reachable per-variable from the Deploy column's "Save as Default"
+      button next to each variable field.
+    </p>
+
+    <!-- One shared "Save Role Variables" button for every existing override, rather than a
+         save button per row (see routes/settings.py's save_role_variable_overrides_bulk()) --
+         each row's input is named value[<name>], parsed bracket-notation-style the same way
+         routes/runs.py's vars[<role>][<var_name>] fields already are. -->
+    <form hx-post="settings/role-variables/bulk" hx-target="#settings-modal-body" hx-swap="innerHTML">
+      <div class="settings-var-list" id="settings-var-list">
+        {% for name, value in role_variable_overrides.items() %}
+          <div class="settings-var-row">
+            <span class="settings-var-name">{{ name }}</span>
+            <input
+              type="text"
+              name="value[{{ name }}]"
+              class="settings-var-value"
+              value="{{ value if value is string else (value | tojson) }}"
+              aria-label="Value for {{ name }}"
+            >
+            <button
+              type="button"
+              class="icon-button"
+              title="Remove {{ name }} override"
+              aria-label="Remove {{ name }} override"
+              hx-delete="settings/role-variables/{{ name }}"
+              hx-target="#settings-modal-body"
+              hx-swap="innerHTML"
+            >&times;</button>
+          </div>
+        {% else %}
+          <p class="empty-hint">No role variable overrides saved yet.</p>
+        {% endfor %}
+      </div>
+      {% if role_variable_overrides %}
+        <button type="submit" class="apply-button">Save Role Variables</button>
+      {% endif %}
+    </form>
+
+    <!-- Adding a new override is its own small, separate action (there's no existing value to
+         bulk-save alongside yet) -- reuses the single-override POST (see routes/settings.py's
+         save_role_variable_override()); an unrecognized name just becomes a new row the next
+         time this fragment is rendered. -->
     <form class="settings-var-row settings-var-row-new" hx-post="settings/role-variables" hx-target="#settings-modal-body" hx-swap="innerHTML">
       <input type="text" name="name" class="settings-var-name-input" placeholder="Variable name" required aria-label="New variable name">
       <input type="text" name="value" class="settings-var-value" placeholder="Value" aria-label="New variable value">
       <button type="submit" class="icon-button" title="Add variable override" aria-label="Add variable override">+</button>
     </form>
-  </div>
-</section>
+  </section>
+</div>
 
-<section class="settings-section">
-  <h3>Host Defaults</h3>
-  <p class="settings-hint">
-    Overrides <code>config.yaml</code>'s <code>defaults.*</code> username/password per port
-    preset (see CLAUDE.md's "Configuration file" section). Leave a field blank to fall back to
-    the configured default shown as its placeholder.
-  </p>
-  <form class="settings-host-form" hx-post="settings/host" hx-target="#settings-modal-body" hx-swap="innerHTML">
-    {% for preset, label in (("ssh", "SSH"), ("winrm", "WinRM"), ("psrp", "PSRP")) %}
-      <fieldset class="deploy-vars-role settings-host-preset">
-        <legend>{{ label }}</legend>
-        <div class="field-row field-row-creds">
-          <label>
-            Username
+<div class="settings-tab-content" data-settings-content="host-variables" hidden>
+  <section class="settings-section">
+    <h3>Host Defaults</h3>
+    <p class="settings-hint">
+      Overrides <code>config.yaml</code>'s <code>defaults.*</code> username/password per port
+      preset (see CLAUDE.md's "Configuration file" section). Leave a field blank to fall back to
+      the configured default shown as its placeholder.
+    </p>
+    <form class="settings-host-form" hx-post="settings/host" hx-target="#settings-modal-body" hx-swap="innerHTML">
+      {% for preset, label in (("ssh", "SSH"), ("winrm", "WinRM"), ("psrp", "PSRP")) %}
+        <fieldset class="deploy-vars-role settings-host-preset">
+          <legend>{{ label }}</legend>
+          <!-- Each field its own full-width line -- the same .settings-var-row shape the Role
+               Variables list above uses, rather than the Deploy column's side-by-side
+               field-row-creds pairing, per this section's own design (see CLAUDE.md). -->
+          <div class="settings-var-row">
+            <span class="settings-var-name">Username</span>
             <input
               type="text"
               name="{{ preset }}_username"
+              class="settings-var-value"
               value="{{ host_overrides.get(preset, {}).get('username', '') }}"
               placeholder="{{ host_config_defaults[preset].username }}"
+              aria-label="{{ label }} username"
             >
-          </label>
-          <label>
-            Password
+          </div>
+          <div class="settings-var-row">
+            <span class="settings-var-name">Password</span>
             <input
               type="password"
               name="{{ preset }}_password"
+              class="settings-var-value"
               value="{{ host_overrides.get(preset, {}).get('password', '') }}"
               placeholder="{{ '(configured)' if host_config_defaults[preset].password else '' }}"
+              aria-label="{{ label }} password"
             >
-          </label>
-        </div>
-      </fieldset>
-    {% endfor %}
-    <button type="submit" class="apply-button">Save Host Settings</button>
-  </form>
-</section>
+          </div>
+        </fieldset>
+      {% endfor %}
+      <button type="submit" class="apply-button">Save Host Settings</button>
+    </form>
+  </section>
+</div>
