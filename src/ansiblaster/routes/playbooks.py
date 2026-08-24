@@ -37,7 +37,7 @@ async def playbook_files(
     return templates.TemplateResponse(
         request,
         "partials/file_browser.html",
-        {"files": files, "base_url": f"/playbooks/{name}"},
+        {"files": files, "base_url": f"playbooks/{name}"},
     )
 
 

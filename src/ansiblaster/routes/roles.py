@@ -10,18 +10,28 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ansiblaster.browse import NotFound, list_role_files, read_role_file
-from ansiblaster.deps import get_app_settings, templates
+from ansiblaster.db import session_scope
+from ansiblaster.deps import get_app_settings, get_session_factory, templates
 from ansiblaster.role_vars import discover_role_variables
 from ansiblaster.roles import discover_roles
 from ansiblaster.settings import Settings
+from ansiblaster.settings_store import apply_role_variable_overrides, get_role_variable_overrides
 
 router = APIRouter()
 
 
 @router.get("/roles")
-async def list_roles(request: Request, settings: Settings = Depends(get_app_settings)):
+async def list_roles(
+    request: Request,
+    settings: Settings = Depends(get_app_settings),
+    session_factory=Depends(get_session_factory),
+):
     roles = discover_roles(settings.ansible.roles_path)
     role_variables = discover_role_variables(settings.ansible.roles_path, roles)
+    with session_scope(session_factory) as session:
+        role_variables = apply_role_variable_overrides(
+            role_variables, get_role_variable_overrides(session)
+        )
     return templates.TemplateResponse(
         request,
         "partials/role_list.html",
@@ -36,7 +46,7 @@ async def role_files(request: Request, name: str, settings: Settings = Depends(g
     except NotFound as exc:
         raise HTTPException(status_code=404, detail="Role not found.") from exc
     return templates.TemplateResponse(
-        request, "partials/file_browser.html", {"files": files, "base_url": f"/roles/{name}"}
+        request, "partials/file_browser.html", {"files": files, "base_url": f"roles/{name}"}
     )
 
 

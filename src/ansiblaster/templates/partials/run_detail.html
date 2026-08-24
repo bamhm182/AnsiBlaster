@@ -38,7 +38,7 @@
   </dl>
 
   {% if is_active %}
-    <button type="button" hx-post="/runs/{{ run.id }}/cancel" hx-swap="outerHTML" hx-target="this">
+    <button type="button" hx-post="runs/{{ run.id }}/cancel" hx-swap="outerHTML" hx-target="this">
       Cancel
     </button>
   {% endif %}

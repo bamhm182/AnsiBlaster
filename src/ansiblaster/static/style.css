@@ -74,6 +74,9 @@ select {
 
 header {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   background: var(--bg-elevated);
   border-bottom: 1px solid var(--bg-inset);
   padding: 0.5rem 1rem;
@@ -90,6 +93,10 @@ header h1 {
 header h1::before {
   content: "⚡ ";
   color: var(--accent);
+}
+
+.settings-cog-button {
+  font-size: 1.05rem;
 }
 
 /* ---------- Overall shell ---------- */
@@ -410,6 +417,41 @@ body.is-resizing-deploy .deploy-resizer {
   accent-color: var(--accent);
 }
 .deploy-var-required {
+  color: var(--red);
+}
+
+/* Input + "Save as Default" button share a row (see index.html's buildVarRow()) -- the input
+   keeps its existing full-width styling via flex:1 instead of width:100%, so the button next
+   to it doesn't get pushed onto its own line. */
+.deploy-var-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+/* Specificity needs to beat the existing ".deploy-var-row input:not([type=checkbox])" rule's
+   width: 100% above (0,2,1) -- otherwise that wins by source-order-independent specificity and
+   the input ignores its flex-basis, pushing the save button off onto its own line. */
+.deploy-var-row .deploy-var-input-row input:not([type="checkbox"]) {
+  width: auto;
+  flex: 1;
+  min-width: 0;
+}
+.save-default-button {
+  flex: 0 0 auto;
+  /* Hover/focus-revealed, same treatment as .eyeball-button elsewhere -- keeps the Variables
+     area from reading as button-cluttered when nothing's being interacted with. */
+  visibility: hidden;
+}
+.deploy-var-row:hover .save-default-button,
+.save-default-button:focus-visible {
+  visibility: visible;
+}
+.save-default-button.save-default-success {
+  visibility: visible;
+  color: var(--green);
+}
+.save-default-button.save-default-error {
+  visibility: visible;
   color: var(--red);
 }
 
@@ -998,7 +1040,7 @@ body.is-resizing {
   white-space: nowrap;
 }
 
-#bottom-panel [hx-get="/runs"] {
+#bottom-panel [hx-get="runs"] {
   flex: 0 0 auto;
   margin: 0.5rem 0.85rem;
   align-self: flex-start;
@@ -1010,7 +1052,259 @@ body.is-resizing {
   cursor: pointer;
   font-size: 0.75rem;
 }
-#bottom-panel [hx-get="/runs"]:hover {
+#bottom-panel [hx-get="runs"]:hover {
   color: var(--fg);
   border-color: var(--accent);
+}
+
+/* ---------- Settings modal ---------- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg-inset) 70%, transparent);
+}
+.modal-overlay[hidden] {
+  display: none;
+}
+
+.modal-box {
+  display: flex;
+  flex-direction: column;
+  width: min(34rem, 92vw);
+  /* Fixed, not max-height -- the modal should always sit at its full size regardless of how
+     little content the active tab happens to have (Host Variables, an empty Role Variables
+     list, etc.), rather than shrinking to fit and then growing again as content changes. */
+  height: 85vh;
+  background: var(--bg-sidebar);
+  border: 1px solid var(--selection);
+  border-radius: 6px;
+  box-shadow: 0 10px 40px color-mix(in srgb, var(--bg-inset) 60%, transparent);
+}
+
+.modal-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 0.9rem;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--bg-inset);
+  border-radius: 6px 6px 0 0;
+}
+.modal-header h2 {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-muted);
+}
+
+/* Role Variables / Host Variables tabs (switched client-side, see index.html's
+   switchSettingsTab()) -- same look as the bottom panel's .bottom-tab/.bottom-tabs, just
+   sitting directly under the modal header instead of a panel header. */
+.settings-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--bg-inset);
+}
+.settings-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--fg-muted);
+  padding: 0.5rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+.settings-tab:hover {
+  color: var(--fg);
+}
+.settings-tab.active {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+
+.settings-tab-content {
+  flex: 1;
+  min-height: 0;
+  padding: 0.85rem 0.9rem;
+  overflow-y: auto;
+}
+/* !important is load-bearing here: .settings-tab-content[hidden] and
+   .settings-tab-content[data-settings-content="role-variables"] below are equal specificity
+   (one class + one attribute selector each), so without this, the role-variables rule's own
+   `display: flex` -- being the later rule in the cascade -- would win even while [hidden] is
+   set, leaving the Role Variables tab visibly stacked above whichever tab is actually active. */
+.settings-tab-content[hidden] {
+  display: none !important;
+}
+
+/* Role Variables tab: a fixed-top (heading/hint/filter) and fixed-bottom (Save button + "add
+   a new one" fields) sandwiching a scrolling middle -- a long override list shouldn't push
+   those always-relevant controls below the fold, and shouldn't force the whole tab to scroll
+   along with it either (contrast the plain overflow-y: auto above, which is enough for the
+   shorter, fixed-size Host Variables tab). */
+.settings-tab-content[data-settings-content="role-variables"] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.settings-role-vars-fixed-top,
+.settings-role-vars-fixed-bottom {
+  flex: 0 0 auto;
+}
+#settings-var-bulk-form {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.settings-var-list-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.settings-role-vars-fixed-bottom {
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--bg-inset);
+}
+.settings-role-vars-fixed-bottom .apply-button {
+  margin-bottom: 0.6rem;
+}
+
+.modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-section {
+  margin-bottom: 1.25rem;
+}
+.settings-section:last-child {
+  margin-bottom: 0;
+}
+.settings-section h3 {
+  margin: 0 0 0.3rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-muted);
+}
+.settings-hint {
+  margin: 0 0 0.6rem;
+  font-size: 0.75rem;
+  color: var(--fg-muted);
+  line-height: 1.4;
+}
+.settings-hint code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.settings-var-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.settings-var-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.settings-var-name,
+.settings-var-name-input {
+  flex: 1;
+  min-width: 0;
+}
+.settings-var-name {
+  color: var(--cyan);
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-var-value,
+.settings-var-name-input {
+  padding: 0.3rem 0.5rem;
+  background: var(--bg);
+  border: 1px solid var(--bg-inset);
+  border-radius: 4px;
+  color: var(--fg);
+  font-size: 0.82rem;
+}
+.settings-var-value {
+  flex: 1;
+  min-width: 0;
+}
+.settings-var-value:focus,
+.settings-var-name-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.settings-var-row-new {
+  border-top: 1px solid var(--bg-inset);
+  padding-top: 0.5rem;
+  margin-top: 0.1rem;
+}
+
+.settings-host-form .apply-button {
+  margin-top: 0.2rem;
+}
+
+/* ---------- Toast notifications (showToast() in base.html) ---------- */
+
+.toast-container {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 200;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 0.5rem;
+  /* The container spans a chunk of the viewport but has no visible content of its own between
+     toasts -- clicks there should fall through to whatever's underneath. Individual toasts
+     re-enable it for themselves below in case a future toast ever wants to be clickable. */
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  min-width: 12rem;
+  max-width: 22rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--selection);
+  border-left: 3px solid var(--accent);
+  color: var(--fg);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--bg-inset) 70%, transparent);
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.toast.toast-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.toast.toast-success {
+  border-left-color: var(--green);
+}
+.toast.toast-error {
+  border-left-color: var(--red);
 }

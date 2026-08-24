@@ -4,15 +4,195 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AnsiBlaster</title>
-  <link rel="stylesheet" href="/static/style.css">
-  <script src="/static/htmx.min.js"></script>
+  <link rel="stylesheet" href="static/style.css">
+  <script src="static/htmx.min.js"></script>
 </head>
 <body>
   <header>
     <h1>AnsiBlaster</h1>
+    <button
+      type="button"
+      class="icon-button settings-cog-button"
+      id="settings-cog-button"
+      title="Settings"
+      aria-label="Open settings"
+      hx-get="settings"
+      hx-target="#settings-modal-body"
+      hx-swap="innerHTML"
+      onclick="openSettingsModal()"
+    >{% include "partials/settings_icon.html" %}</button>
   </header>
   <main>
     {% block content %}{% endblock %}
   </main>
+
+  <!-- Settings popup: htmx-loaded (GET /settings, see routes/settings.py) into #settings-
+       modal-body every time it's opened, so it always reflects whatever was last saved --
+       nothing here is server-rendered on the initial page load. See CLAUDE.md's "Settings"
+       section. -->
+  <div class="modal-overlay" id="settings-modal-overlay" hidden>
+    <div class="modal-box" role="dialog" aria-modal="true" aria-label="Settings">
+      <div class="modal-header">
+        <h2>Settings</h2>
+        <button
+          type="button"
+          class="icon-button"
+          onclick="document.getElementById('settings-modal-overlay').hidden = true;"
+          title="Close settings"
+          aria-label="Close settings"
+        >&times;</button>
+      </div>
+      <div class="modal-body" id="settings-modal-body">
+        <p class="empty-hint">Loading&hellip;</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast notifications: brief, auto-dismissing confirmations for actions that otherwise give
+       no visible feedback (a background refresh, a settings save) -- see showToast() below.
+       Fixed-position, so its place here in the document doesn't matter; kept next to the modal
+       markup above since that's this file's other piece of shared page chrome. -->
+  <div class="toast-container" id="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+  <script>
+    // Generic modal chrome (click-outside / Escape to close) -- kept here rather than in
+    // index.html's own script block since the modal itself lives in this shared shell, not in
+    // any one page's content block. This whole script block runs *after* the modal markup
+    // above it, which matters: index.html's own script executes earlier (it's inside <main>,
+    // which comes before this div in the document), so a lookup like
+    // document.getElementById("settings-modal-body") would still be null there -- the element
+    // doesn't exist in the DOM yet at that point in parsing.
+    document.getElementById("settings-modal-overlay").addEventListener("click", (evt) => {
+      if (evt.target.id === "settings-modal-overlay") evt.currentTarget.hidden = true;
+    });
+    document.addEventListener("keydown", (evt) => {
+      if (evt.key === "Escape") document.getElementById("settings-modal-overlay").hidden = true;
+    });
+
+    // ---------------------------------------------------------------------
+    // Toast notifications: a brief, auto-dismissing confirmation for an action that would
+    // otherwise give no visible feedback (a background refresh, a settings save/delete). Kept
+    // here rather than index.html for the same reason the modal chrome is -- #toast-container
+    // is shared page chrome, not specific to index.html's own content.
+    // ---------------------------------------------------------------------
+    function showToast(message, type = "success") {
+      const container = document.getElementById("toast-container");
+      const toast = document.createElement("div");
+      toast.className = `toast toast-${type}`;
+      toast.textContent = message;
+      container.appendChild(toast);
+      // Two rAFs, not one: the class needs to be added on a frame *after* the element's
+      // initial (transition-less) layout has actually happened, or the browser coalesces the
+      // "add .toast" and "start transitioning" into one paint and the fade-in never shows --
+      // one rAF still lands before that first layout/paint, two reliably lands after it.
+      requestAnimationFrame(() => requestAnimationFrame(() => toast.classList.add("toast-visible")));
+      setTimeout(() => {
+        toast.classList.remove("toast-visible");
+        toast.addEventListener("transitionend", () => toast.remove(), { once: true });
+        // Fallback in case transitionend never fires (e.g. prefers-reduced-motion dropping the
+        // transition entirely) -- still cleans the node up rather than leaving it stuck.
+        setTimeout(() => toast.remove(), 400);
+      }, 3000);
+    }
+
+    // ---------------------------------------------------------------------
+    // Settings modal: Role Variables / Host Variables tabs, switched purely client-side (same
+    // technique as index.html's switchBottomTab()) -- except #settings-modal-body's *entire*
+    // innerHTML is replaced by htmx on every add/save/delete inside it (see routes/
+    // settings.py), which would otherwise silently reset the visible tab (and the Role
+    // Variables tab's own filter query) back to whatever settings_modal_body.html renders by
+    // default. activeSettingsTab/settingsVarFilterQuery track the last-active tab/filter query
+    // across those swaps; the delegated listeners and the htmx:afterSwap re-application below
+    // both survive them (only descendants of #settings-modal-body are replaced, not the
+    // element itself).
+    // ---------------------------------------------------------------------
+    let activeSettingsTab = "role-variables";
+    let settingsVarFilterQuery = "";
+
+    // Called by the cog button above -- resets to the default tab/an empty filter on every
+    // fresh open (the overlay itself is unhidden here too, so it all happens from one place).
+    function openSettingsModal() {
+      activeSettingsTab = "role-variables";
+      settingsVarFilterQuery = "";
+      document.getElementById("settings-modal-overlay").hidden = false;
+    }
+
+    function switchSettingsTab(name) {
+      activeSettingsTab = name;
+      document.querySelectorAll(".settings-tab").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.settingsTab === name);
+      });
+      document.querySelectorAll(".settings-tab-content").forEach((el) => {
+        el.hidden = el.dataset.settingsContent !== name;
+      });
+    }
+
+    const settingsModalBody = document.getElementById("settings-modal-body");
+    settingsModalBody.addEventListener("click", (evt) => {
+      const tab = evt.target.closest(".settings-tab");
+      if (tab) switchSettingsTab(tab.dataset.settingsTab);
+    });
+
+    // Keeps settingsVarFilterQuery current on every keystroke -- separate from index.html's own
+    // delegated ".fuzzy-filter" input listener (which drives the live filtering itself); this
+    // one only tracks the value so it can be restored after a swap wipes the input below.
+    settingsModalBody.addEventListener("input", (evt) => {
+      if (evt.target.id === "settings-var-filter") settingsVarFilterQuery = evt.target.value;
+    });
+
+    settingsModalBody.addEventListener("htmx:afterSwap", () => {
+      switchSettingsTab(activeSettingsTab);
+      const filterInput = document.getElementById("settings-var-filter");
+      if (filterInput) {
+        filterInput.value = settingsVarFilterQuery;
+        // applyFuzzyFilter() is defined in index.html's own script, which -- unlike this one --
+        // already ran by the time this listener can possibly fire, so it's safe to call here
+        // (same reasoning as refreshRoleList() below).
+        applyFuzzyFilter(filterInput);
+      }
+    });
+
+    // Human-readable success text for whichever settings/* mutation just completed, keyed by
+    // its request path (see routes/settings.py) -- all four are POST/DELETE, never GET, so the
+    // caller below only reaches this after already excluding the modal's own initial GET.
+    function settingsSuccessMessage(path) {
+      if (path === "settings/role-variables/bulk") return "Role variables saved.";
+      if (path === "settings/host") return "Host settings saved.";
+      if (path === "settings/role-variables") return "Variable override saved.";
+      if (path?.startsWith("settings/role-variables/")) return "Variable override removed.";
+      return "Saved.";
+    }
+
+    // FastAPI renders a raised HTTPException as JSON ({"detail": "..."}), not plain text --
+    // unwrap it for the toast rather than showing the raw JSON string. Falls back to a generic
+    // message if the body isn't that shape (e.g. a 500 with an HTML error page).
+    function settingsErrorMessage(xhr) {
+      try {
+        const body = JSON.parse(xhr.responseText);
+        if (body?.detail) return body.detail;
+      } catch (err) {
+        // fall through to the generic message below
+      }
+      return "Failed to save settings.";
+    }
+
+    // A mutating request from inside the modal (add/save/delete a role-variable override, save
+    // host settings) may have changed a role-variable default -- refresh the Roles column's
+    // data-vars the same way index.html's saveVariableAsDefault() does, so it takes effect
+    // immediately rather than only after the next manual Roles refresh or full page reload.
+    // refreshRoleList() is defined in index.html's own script, which -- unlike this one --
+    // already ran by the time this listener can possibly fire, so it's safe to call here. The
+    // initial GET that opens the modal is excluded (nothing changed yet, and it's not a
+    // meaningful action to toast about).
+    settingsModalBody.addEventListener("htmx:afterRequest", (evt) => {
+      if (evt.detail.requestConfig?.verb === "get") return;
+      if (!evt.detail.successful) {
+        showToast(settingsErrorMessage(evt.detail.xhr), "error");
+        return;
+      }
+      refreshRoleList();
+      showToast(settingsSuccessMessage(evt.detail.requestConfig?.path));
+    });
+  </script>
 </body>
 </html>

@@ -9,9 +9,10 @@
         <button
           type="button"
           class="icon-button"
-          hx-get="/playbooks"
+          hx-get="playbooks"
           hx-target="#playbook-list"
           hx-swap="innerHTML"
+          hx-on::after-request="if (event.detail.successful) showToast('Playbooks refreshed.')"
           title="Refresh playbooks"
         >&#8635;</button>
       </div>
@@ -33,9 +34,10 @@
         <button
           type="button"
           class="icon-button"
-          hx-get="/roles"
+          hx-get="roles"
           hx-target="#role-list"
           hx-swap="innerHTML"
+          hx-on::after-request="if (event.detail.successful) showToast('Roles refreshed.')"
           title="Refresh roles"
         >&#8635;</button>
       </div>
@@ -194,7 +196,13 @@
         <ul class="run-list" id="run-list">
           {% include "partials/run_list.html" %}
         </ul>
-        <button type="button" hx-get="/runs" hx-target="#run-list" hx-swap="innerHTML">
+        <button
+          type="button"
+          hx-get="runs"
+          hx-target="#run-list"
+          hx-swap="innerHTML"
+          hx-on::after-request="if (event.detail.successful) showToast('History refreshed.')"
+        >
           Refresh history
         </button>
       </div>
@@ -296,7 +304,7 @@
     text.textContent = "Checking…";
     try {
       const response = await fetch(
-        `/target/check-port?host=${encodeURIComponent(host)}&port=${encodeURIComponent(port)}`
+        `target/check-port?host=${encodeURIComponent(host)}&port=${encodeURIComponent(port)}`
       );
       const result = await response.json();
       dot.className = "port-status-dot " + (result.open ? "is-open" : "is-closed");
@@ -342,6 +350,11 @@
   // eye_icon.html) -- embedded here too since this list is built client-side, not
   // server-rendered, so it can't include the partial's markup into its own output directly.
   const EYE_ICON_SVG = `{% include "partials/eye_icon.html" %}`;
+
+  // Same reasoning as EYE_ICON_SVG above -- shared with settings_modal_body.html's own "Save"
+  // buttons (server-rendered there, so that one just includes the partial directly), needed as
+  // a JS constant here only because buildVarRow() below builds its row client-side.
+  const SAVE_ICON_SVG = `{% include "partials/save_icon.html" %}`;
 
   // The Deploy column's top section is a read-only reflection of whatever's checked in the
   // Roles column -- removal happens by unchecking the box there, not by interacting with this
@@ -451,8 +464,83 @@
     }
     label.setAttribute("for", input.id);
 
-    row.append(label, input);
+    // "Save as Default" -- persists this field's *current* value as a Settings-popup override
+    // for every role's "varName" variable (overrides are global by name, not per-role -- see
+    // CLAUDE.md's "Settings" section), via saveVariableAsDefault() below. Hover/focus-revealed
+    // like the eyeball buttons elsewhere, so the row doesn't read as button-cluttered at rest.
+    const saveButton = document.createElement("button");
+    saveButton.type = "button";
+    saveButton.className = "icon-button save-default-button";
+    saveButton.title = `Save "${varName}" as default`;
+    saveButton.setAttribute("aria-label", `Save ${varName} as default`);
+    saveButton.innerHTML = SAVE_ICON_SVG;
+    saveButton.addEventListener("click", () => saveVariableAsDefault(varName, input, saveButton));
+
+    const inputRow = document.createElement("div");
+    inputRow.className = "deploy-var-input-row";
+    inputRow.append(input, saveButton);
+
+    row.append(label, inputRow);
     return row;
+  }
+
+  // ---------------------------------------------------------------------
+  // "Save as Default" (see buildVarRow() above): fires a background POST straight to
+  // routes/settings.py, independent of whether the Settings modal is even open -- there's
+  // nothing here to swap into, just a fire-and-confirm write. A checkbox's current value reads
+  // as "true"/"false" (matching collectCurrentVarValues()'s own convention), everything else
+  // as its plain input value; the server re-parses that same text via yaml.safe_load() either
+  // way (settings_store.parse_override_value()), same as routes/runs.py's own variable
+  // coercion, so a numeric/boolean-looking value still round-trips as its real type.
+  // ---------------------------------------------------------------------
+  async function saveVariableAsDefault(varName, input, button) {
+    const value = input.type === "checkbox" ? String(input.checked) : input.value;
+    button.classList.remove("save-default-error");
+    try {
+      const response = await fetch("settings/role-variables", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ name: varName, value }),
+      });
+      if (!response.ok) throw new Error(`Request failed (${response.status})`);
+      button.classList.add("save-default-success");
+      setTimeout(() => button.classList.remove("save-default-success"), 1200);
+      showToast(`"${varName}" saved as default.`);
+      // Every role checkbox's data-vars (the source buildVarRow() falls back to as a
+      // variable's "default") is a snapshot baked in at the last GET /roles -- refresh it now
+      // so this override actually takes effect the next time any role is (re)checked, without
+      // requiring a manual Roles-panel refresh or a full page reload first.
+      refreshRoleList();
+    } catch (err) {
+      button.classList.add("save-default-error");
+      setTimeout(() => button.classList.remove("save-default-error"), 1200);
+      showToast(`Failed to save "${varName}" as default.`, "error");
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Re-fetches the Roles column's checklist (GET /roles) in place, so every checkbox's baked-in
+  // data-vars picks up any role-variable-default override just saved -- either here (via
+  // saveVariableAsDefault() above) or from the Settings modal itself (see the
+  // #settings-modal-body htmx:afterRequest listener below). Preserves whatever's currently
+  // checked/typed across the refresh: syncRoleVariables() already prefers an explicit
+  // "previous" value over a role's own declared default (see its own comment above), so passing
+  // collectCurrentVarValues()'s snapshot through re-establishes any in-progress, not-yet-saved
+  // edits exactly as before -- only a variable with no in-progress edit picks up its fresh
+  // (possibly now-overridden) default.
+  // ---------------------------------------------------------------------
+  async function refreshRoleList() {
+    const checkedRoles = Array.from(document.querySelectorAll('input[name="roles"]:checked')).map(
+      (el) => el.value
+    );
+    const previousVars = collectCurrentVarValues();
+    await htmx.ajax("GET", "roles", "#role-list");
+    checkedRoles.forEach((role) => {
+      const checkbox = document.getElementById("role-" + role);
+      if (checkbox) checkbox.checked = true;
+    });
+    syncSelectedRolesSummary();
+    syncRoleVariables(previousVars);
   }
 
   function syncRoleVariables(overrideValues) {
@@ -514,8 +602,11 @@
     });
   }
 
-  document.querySelectorAll(".fuzzy-filter").forEach((input) => {
-    input.addEventListener("input", () => applyFuzzyFilter(input));
+  // Delegated (rather than a direct listener per `.fuzzy-filter` found at page load) so it also
+  // covers the Settings modal's own filter input (id="settings-var-filter"), which doesn't
+  // exist yet at this point -- it's loaded later via htmx (see routes/settings.py).
+  document.addEventListener("input", (evt) => {
+    if (evt.target.matches(".fuzzy-filter")) applyFuzzyFilter(evt.target);
   });
 
   // Re-apply whichever filter is active after its list is refreshed via the header's refresh
@@ -572,7 +663,7 @@
     switchBottomTab("viewer");
     document.getElementById("viewer-file-content").innerHTML =
       '<p class="empty-hint">Select a file on the left to view its contents.</p>';
-    const baseUrl = `/${kind}s/${encodeURIComponent(name)}`;
+    const baseUrl = `${kind}s/${encodeURIComponent(name)}`;
     await htmx.ajax("GET", `${baseUrl}/files`, "#viewer-file-list");
     selectDefaultViewerFile(baseUrl);
   }
@@ -603,7 +694,7 @@
 
   function connectRunStream(runId) {
     if (activeEventSources[runId]) return;
-    const source = new EventSource(`/runs/${runId}/stream`);
+    const source = new EventSource(`runs/${runId}/stream`);
     activeEventSources[runId] = source;
 
     source.addEventListener("message", (evt) => {
@@ -614,7 +705,7 @@
     source.addEventListener("done", async () => {
       closeRunStream(runId);
       try {
-        const response = await fetch(`/runs/${runId}`);
+        const response = await fetch(`runs/${runId}`);
         if (response.ok) openRunTab(await response.text());
       } catch (err) {
         // Best-effort refresh for the final status/rc -- the log itself is already fully
@@ -738,7 +829,7 @@
     if (isActive) {
       if (!window.confirm("This run is still in progress. Stop it and close the tab?")) return;
       try {
-        await fetch(`/runs/${runId}/cancel`, { method: "POST" });
+        await fetch(`runs/${runId}/cancel`, { method: "POST" });
       } catch (err) {
         // Best-effort -- still close the tab locally even if the cancel request itself failed.
       }
@@ -831,7 +922,7 @@
     applyButton.disabled = true;
     applyFormError.hidden = true;
     try {
-      const response = await fetch("/runs", { method: "POST", body: new FormData(applyForm) });
+      const response = await fetch("runs", { method: "POST", body: new FormData(applyForm) });
       const text = await response.text();
       if (!response.ok) {
         applyFormError.textContent = text || `Request failed (${response.status}).`;
@@ -851,7 +942,7 @@
   document.getElementById("run-list").addEventListener("click", async (evt) => {
     const link = evt.target.closest(".run-row-link");
     if (!link) return;
-    const response = await fetch(`/runs/${link.dataset.runId}`);
+    const response = await fetch(`runs/${link.dataset.runId}`);
     const text = await response.text();
     if (response.ok) openRunTab(text);
   });
@@ -862,7 +953,7 @@
   // stream signals completion (see connectRunStream's "done" listener above).
   async function refreshHistory() {
     try {
-      const response = await fetch("/runs");
+      const response = await fetch("runs");
       if (response.ok) document.getElementById("run-list").innerHTML = await response.text();
     } catch (err) {
       // Best-effort -- the "Refresh history" button remains as a manual fallback.
