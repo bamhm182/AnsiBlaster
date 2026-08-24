@@ -4,6 +4,33 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AnsiBlaster</title>
+  <!-- Self-heal a missing trailing slash on the current URL *before* anything relative below
+       (the stylesheet, htmx) gets requested -- must be the first thing in <head> that can
+       fetch anything, and must run synchronously (a normal, non-deferred inline script blocks
+       the parser) so it executes before the parser reaches the <link>/<script src> tags below.
+
+       This is what makes the app work when reverse-proxied at an arbitrary,
+       request-invisible subpath -- e.g. Coder OSS's path-based workspace-app proxying
+       ("https://coder.example.com/@user/workspace.agent/apps/ansiblaster") -- SEE "Backend &
+       UI" in CLAUDE.md for the full explanation of why every URL here is written relative,
+       with no leading slash. That convention only resolves correctly when the browser's
+       address bar itself ends in a trailing slash: relative URLs resolve against the current
+       document's own address, and "static/style.css" resolves one directory too high without
+       one (fetching a *different* app's, or Coder's own, static/style.css). The backend can
+       never detect or fix this itself -- Coder strips its own prefix before forwarding, so
+       every request the backend receives looks identical regardless of whether the browser's
+       address bar has the trailing slash or not (see CLAUDE.md) -- only the browser's address
+       bar knows the real external path, so this has to run client-side. window.location.replace()
+       (not assign()) so the redirect doesn't leave a broken entry in browser history; a no-op
+       whenever the path already ends in "/", which includes the plain, non-proxied case
+       (GET / at the domain root). -->
+  <script>
+    if (!window.location.pathname.endsWith("/")) {
+      window.location.replace(
+        window.location.pathname + "/" + window.location.search + window.location.hash
+      );
+    }
+  </script>
   <link rel="stylesheet" href="static/style.css">
   <script src="static/htmx.min.js"></script>
 </head>
