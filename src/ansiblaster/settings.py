@@ -47,6 +47,18 @@ class DatabaseSettings(BaseModel):
 
 
 class LoggingSettings(BaseModel):
+    """Governs the app's own logger and uvicorn's startup/error logging -- see
+    logging_config.py for how this is actually applied (via a custom `log_config` dict, not
+    uvicorn's `log_level`, which can't express the split logging_config.py needs). uvicorn's
+    own per-request access logging is deliberately *not* governed by this: it's pinned to
+    require DEBUG specifically, regardless of this setting, since it happens constantly under
+    normal operation -- see logging_config.py's docstring. INFO by default, so the app's own
+    infrequent-but-meaningful log lines (a role/playbook reload's outcome -- see
+    routes/roles.py/routes/playbooks.py) show up without also needing DEBUG. Override with
+    ANSIBLASTER_LOGGING__LEVEL (any level Python's logging module recognizes: "critical",
+    "error", "warning", "info", "debug" -- case-insensitive).
+    """
+
     level: str = "INFO"
 
 

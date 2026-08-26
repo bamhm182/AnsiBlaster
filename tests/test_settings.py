@@ -98,6 +98,14 @@ def test_nested_defaults_credentials_via_env_var(monkeypatch):
     assert settings.defaults.psrp.password == ""
 
 
+def test_logging_level_env_var_override(monkeypatch):
+    monkeypatch.setenv("ANSIBLASTER_LOGGING__LEVEL", "DEBUG")
+
+    settings = load_settings()
+
+    assert settings.logging.level == "DEBUG"
+
+
 def test_get_settings_is_cached_singleton():
     first = get_settings()
     second = get_settings()

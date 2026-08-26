@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from tests.conftest import make_playbook
 
@@ -46,3 +47,21 @@ def test_playbook_file_returns_content(client, tmp_path):
 
     assert response.status_code == 200
     assert "apache" in response.text
+
+
+def test_list_playbooks_logs_the_loaded_count_at_info(client, tmp_path, caplog):
+    make_playbook(tmp_path, "lamp", ["apache", "mysql", "php"])
+
+    with caplog.at_level(logging.INFO, logger="ansiblaster.routes.playbooks"):
+        client.get("/playbooks")
+
+    assert "Loaded 1 playbook(s)" in caplog.text
+
+
+def test_list_playbooks_logs_missing_directory_at_info(client, caplog):
+    # No make_playbook() call -- the configured playbooks directory is never created, so this
+    # exercises the "missing dir" branch.
+    with caplog.at_level(logging.INFO, logger="ansiblaster.routes.playbooks"):
+        client.get("/playbooks")
+
+    assert "does not exist" in caplog.text
