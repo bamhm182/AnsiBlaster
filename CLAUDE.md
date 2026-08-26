@@ -708,6 +708,8 @@ server:
   port: 8000
 
 ansible:
+  # path: /opt/ansible   # unset by default -- base dir for roles_path/playbooks_path below,
+                          # when both live side by side instead of overriding them individually
   roles_path: /opt/ansible/roles        # directory scanned for roles
   playbooks_path: /opt/ansible/playbooks   # directory scanned for playbook YAML files (role presets)
   artifacts_path: /opt/ansiblaster/artifacts   # base dir for ansible-runner's per-job private_data_dir
@@ -764,6 +766,21 @@ in addition to its own per-job subdirectory under it — so nothing here needs t
 already exist ahead of time (a bind-mounted `VOLUME` in the Docker image, or a manually created
 directory on a bare checkout).
 
+`ansible.path` (unset by default) is the same idea one level down, for `ansible.roles_path`/
+`ansible.playbooks_path` instead of `database.path`/`ansible.artifacts_path`: a base directory
+holding both as sibling subdirectories (`roles/`, `playbooks/`), for when roles and playbooks
+simply live side by side somewhere other than the hardcoded `/opt/ansible` default — e.g. a
+single checked-out Ansible content repo laid out as `<path>/roles` and `<path>/playbooks`. Set
+via `ANSIBLASTER_ANSIBLE__PATH=/srv/ansible` or this section's own `path:` key. Same precedence
+and same comparison-against-the-hardcoded-default implementation as `dir` above
+(`AnsibleSettings._apply_path_override()`, right next to `_apply_dir_override()` in
+`settings.py`) — an explicitly-set `roles_path`/`playbooks_path` still wins over `path` for that
+one setting. Unlike `dir`, nothing here creates `path`'s directories: `roles_path`/
+`playbooks_path` are expected to already hold real Ansible content (read-only bind mounts in the
+Docker image), not app-owned storage the app should create on first use — a missing directory is
+handled the same as always, by discovery simply finding nothing there (see "Backend & UI"
+above), never by creating an empty one.
+
 `logging.level` governs the app's own logger (`"ansiblaster"`, and every `ansiblaster.*` module
 logger under it via `logging.getLogger(__name__)`) plus uvicorn's `"uvicorn"`/`"uvicorn.error"`
 loggers (startup/shutdown/errors) — applied in `__main__.py`'s `main()` (the `uv run
@@ -791,6 +808,8 @@ Every key is overridable via an environment variable using the `ANSIBLASTER_` pr
 the nesting delimiter, e.g.:
 
 - `ANSIBLASTER_SERVER__PORT=9000`
+- `ANSIBLASTER_ANSIBLE__PATH=/srv/ansible` (implies `roles_path`/`playbooks_path` of
+  `/srv/ansible/roles`/`/srv/ansible/playbooks`, unless either is itself also set below)
 - `ANSIBLASTER_ANSIBLE__ROLES_PATH=/srv/ansible/roles`
 - `ANSIBLASTER_ANSIBLE__PLAYBOOKS_PATH=/srv/ansible/playbooks`
 - `ANSIBLASTER_DATABASE__PATH=/data/ansiblaster.db`

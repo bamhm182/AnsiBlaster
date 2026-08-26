@@ -39,6 +39,13 @@ _DEFAULT_DATA_DIR = "/opt/ansiblaster"
 _DEFAULT_ARTIFACTS_PATH = f"{_DEFAULT_DATA_DIR}/artifacts"
 _DEFAULT_DATABASE_PATH = f"{_DEFAULT_DATA_DIR}/ansiblaster.db"
 
+# Same idea, one level down: roles_path/playbooks_path's own built-in defaults, named so
+# AnsibleSettings._apply_path_override() below can recognize "still the built-in default"
+# without repeating the path strings.
+_DEFAULT_ANSIBLE_DIR = "/opt/ansible"
+_DEFAULT_ROLES_PATH = f"{_DEFAULT_ANSIBLE_DIR}/roles"
+_DEFAULT_PLAYBOOKS_PATH = f"{_DEFAULT_ANSIBLE_DIR}/playbooks"
+
 
 class ServerSettings(BaseModel):
     host: str = "0.0.0.0"
@@ -46,9 +53,33 @@ class ServerSettings(BaseModel):
 
 
 class AnsibleSettings(BaseModel):
-    roles_path: str = "/opt/ansible/roles"
-    playbooks_path: str = "/opt/ansible/playbooks"
+    roles_path: str = _DEFAULT_ROLES_PATH
+    playbooks_path: str = _DEFAULT_PLAYBOOKS_PATH
     artifacts_path: str = _DEFAULT_ARTIFACTS_PATH
+
+    # Base directory holding roles_path/playbooks_path as sibling subdirectories (`roles/`,
+    # `playbooks/`) -- set via ANSIBLASTER_ANSIBLE__PATH or this section's own `path:` YAML
+    # key. An alternative to overriding roles_path/playbooks_path individually when both
+    # simply live side by side somewhere other than /opt/ansible, e.g. a single checked-out
+    # Ansible repo laid out as <path>/roles and <path>/playbooks. Mirrors Settings.dir/
+    # _apply_dir_override() below, one level down -- see there for the same caveats.
+    path: str | None = None
+
+    @model_validator(mode="after")
+    def _apply_path_override(self) -> AnsibleSettings:
+        """Fold `path` (ANSIBLASTER_ANSIBLE__PATH) into roles_path/playbooks_path's defaults.
+
+        Same approach as Settings._apply_dir_override() -- only fills in whichever of
+        roles_path/playbooks_path is still exactly the built-in default, so either one set
+        explicitly (env var or YAML) always wins over `path`.
+        """
+        if self.path:
+            base = Path(self.path)
+            if self.roles_path == _DEFAULT_ROLES_PATH:
+                self.roles_path = str(base / "roles")
+            if self.playbooks_path == _DEFAULT_PLAYBOOKS_PATH:
+                self.playbooks_path = str(base / "playbooks")
+        return self
 
 
 class DatabaseSettings(BaseModel):
