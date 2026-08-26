@@ -63,6 +63,14 @@ class JobManager:
         self._session_factory = session_factory
         self._roles_path = roles_path
         self._artifacts_path = artifacts_path
+        # Create the base artifacts directory up front (same "make sure the target exists"
+        # precedent as db.py's make_engine() creating database.path's parent), rather than
+        # relying solely on start_job()'s own per-job mkdir(parents=True) below -- that still
+        # runs on every job and is what actually matters for ansible-runner, but only fires
+        # once a job has actually been started, so a freshly configured artifacts_path (e.g.
+        # via the ANSIBLASTER_DIR base directory -- see settings.py) wouldn't otherwise exist,
+        # or be verified writable, until the first run is launched.
+        Path(artifacts_path).mkdir(parents=True, exist_ok=True)
         self._jobs: dict[str, JobHandle] = {}
 
     def get_job(self, job_id: str) -> JobHandle | None:

@@ -50,6 +50,27 @@ def _fake_run_async_recorder(
     return _fake_run_async
 
 
+def test_job_manager_creates_artifacts_dir_up_front(tmp_path):
+    """Regression test: the base artifacts directory (e.g. a freshly configured
+    ANSIBLASTER_DIR-derived path -- see settings.py) must exist as soon as JobManager is
+    constructed, not only once a job has actually been started.
+    """
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    engine = make_engine(str(tmp_path / "test.db"))
+    init_db(engine)
+    session_factory = make_session_factory(engine)
+    artifacts_path = tmp_path / "nested" / "artifacts"
+    assert not artifacts_path.exists()
+
+    JobManager(
+        session_factory=session_factory,
+        roles_path=str(tmp_path / "roles"),
+        artifacts_path=str(artifacts_path),
+    )
+
+    assert artifacts_path.is_dir()
+
+
 async def test_start_job_creates_run_row_and_marks_it_successful(tmp_path, monkeypatch):
     calls: list[dict] = []
     monkeypatch.setattr(

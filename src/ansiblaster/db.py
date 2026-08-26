@@ -23,13 +23,13 @@ class Base(DeclarativeBase):
 def make_engine(database_path: str) -> Engine:
     """Create the SQLAlchemy engine for the configured SQLite database path.
 
-    Unlike ansible.artifacts_path (created lazily, per-job, by jobs.py), database.path has no
-    other code path that ever creates its directory -- and SQLite itself won't create a
-    missing parent directory, it just fails to open the file. So a fresh install pointed at
-    e.g. /opt/ansiblaster/ansiblaster.db, with nothing having created /opt/ansiblaster/ yet
-    (the Docker image's VOLUME declares it, but a bare `uv run` checkout has no such
-    guarantee), would fail at startup. Create it here, once, up front -- the same "just make
-    sure the target exists" precedent as jobs.py's own mkdir(parents=True, exist_ok=True).
+    database.path has no other code path that ever creates its directory -- and SQLite itself
+    won't create a missing parent directory, it just fails to open the file. So a fresh
+    install pointed at e.g. /opt/ansiblaster/ansiblaster.db, with nothing having created
+    /opt/ansiblaster/ yet (the Docker image's VOLUME declares it, but a bare `uv run` checkout
+    has no such guarantee), would fail at startup. Create it here, once, up front -- the same
+    "just make sure the target exists" precedent as jobs.py's JobManager.__init__() (its own
+    artifacts_path) and start_job() (its per-job mkdir(parents=True, exist_ok=True)).
     """
     Path(database_path).parent.mkdir(parents=True, exist_ok=True)
     return create_engine(f"sqlite:///{database_path}", future=True)

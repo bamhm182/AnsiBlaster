@@ -699,6 +699,10 @@ not an error.
 ```yaml
 # config.yaml — all keys shown with their defaults
 
+# dir: /opt/ansiblaster   # unset by default -- base dir for ansible.artifacts_path/database.path
+                           # below, when both should simply move somewhere other than
+                           # /opt/ansiblaster instead of overriding them individually (see below)
+
 server:
   host: "0.0.0.0"
   port: 8000
@@ -739,6 +743,27 @@ username/password values per preset at runtime, without editing this file or res
 process — a DB-saved override always wins over this file's value for that exact preset+field
 when both exist; a field left unset in the popup just falls back to whatever's configured here.
 
+`dir` (top-level, unset by default) is a single base directory for AnsiBlaster's own persistent
+storage — `ansible.artifacts_path` and `database.path` — as an alternative to overriding those
+two individually when both should simply move somewhere other than the hardcoded
+`/opt/ansiblaster` default, e.g. a non-root `uv run` checkout on a host where `/opt` isn't
+writable: `ANSIBLASTER_DIR=/home/user/.config/ansiblaster` puts the database at
+`~/.config/ansiblaster/ansiblaster.db` and job artifacts under
+`~/.config/ansiblaster/artifacts/`. It only fills in whichever of `ansible.artifacts_path`/
+`database.path` are still at their built-in default — either one explicitly set (env var or this
+file) always wins over `dir` for that one path, so e.g. `dir` plus a separately-overridden
+`database.path` relocates only `artifacts_path`. `settings.py`'s `Settings._apply_dir_override()`
+implements this by comparing against the hardcoded default path strings rather than tracking
+"was this explicitly set" through the settings-source merge — the one edge case that approach
+misses is a `database.path`/`artifacts_path` override that happens to equal the literal default
+path, which would still be treated as unset. Whichever directories are actually in effect
+(`dir`-derived or not) are created automatically, before first use, if missing — `db.py`'s
+`make_engine()` creates `database.path`'s parent directory when the engine is built at startup,
+and `jobs.py`'s `JobManager` creates `artifacts_path` itself when constructed (also at startup),
+in addition to its own per-job subdirectory under it — so nothing here needs the directory to
+already exist ahead of time (a bind-mounted `VOLUME` in the Docker image, or a manually created
+directory on a bare checkout).
+
 `logging.level` governs the app's own logger (`"ansiblaster"`, and every `ansiblaster.*` module
 logger under it via `logging.getLogger(__name__)`) plus uvicorn's `"uvicorn"`/`"uvicorn.error"`
 loggers (startup/shutdown/errors) — applied in `__main__.py`'s `main()` (the `uv run
@@ -772,6 +797,10 @@ the nesting delimiter, e.g.:
 - `ANSIBLASTER_LOGGING__LEVEL=INFO`
 - `ANSIBLASTER_DEFAULTS__SSH__PASSWORD=...` / `ANSIBLASTER_DEFAULTS__WINRM__PASSWORD=...` /
   `ANSIBLASTER_DEFAULTS__PSRP__PASSWORD=...`
+
+`dir` is the one exception to the `__`-nesting convention above — it's a top-level field, not
+nested under a sub-model, so it's set via the plain `ANSIBLASTER_DIR` env var (no `__`), e.g.
+`ANSIBLASTER_DIR=/home/user/.config/ansiblaster`.
 
 ## Project layout
 
