@@ -32,7 +32,7 @@ def test_defaults_with_no_config_file_and_no_env_vars():
     assert settings.ansible.playbooks_path == "/opt/ansible/playbooks"
     assert settings.ansible.artifacts_path == "/opt/ansiblaster/artifacts"
     assert settings.database.path == "/opt/ansiblaster/ansiblaster.db"
-    assert settings.logging.level == "INFO"
+    assert settings.logging.level == "WARNING"
     assert settings.defaults.ssh.username == ""
     assert settings.defaults.ssh.password == ""
     assert settings.defaults.winrm.username == ""
@@ -96,6 +96,14 @@ def test_nested_defaults_credentials_via_env_var(monkeypatch):
     assert settings.defaults.ssh.username == ""
     assert settings.defaults.psrp.username == ""
     assert settings.defaults.psrp.password == ""
+
+
+def test_logging_level_env_var_override(monkeypatch):
+    monkeypatch.setenv("ANSIBLASTER_LOGGING__LEVEL", "DEBUG")
+
+    settings = load_settings()
+
+    assert settings.logging.level == "DEBUG"
 
 
 def test_get_settings_is_cached_singleton():

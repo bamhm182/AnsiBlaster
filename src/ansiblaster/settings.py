@@ -47,7 +47,14 @@ class DatabaseSettings(BaseModel):
 
 
 class LoggingSettings(BaseModel):
-    level: str = "INFO"
+    """Passed straight through to uvicorn's own `log_level` (see __main__.py) -- WARNING by
+    default, since uvicorn's INFO level logs one access-log line per HTTP request, which gets
+    noisy fast given how much this app's UI polls/refreshes via htmx. Override with
+    ANSIBLASTER_LOGGING__LEVEL (any level uvicorn accepts: "critical", "error", "warning",
+    "info", "debug", "trace") to get the request-level detail back when actually debugging.
+    """
+
+    level: str = "WARNING"
 
 
 class TargetCredentials(BaseModel):

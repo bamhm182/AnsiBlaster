@@ -694,7 +694,7 @@ database:
   path: /opt/ansiblaster/ansiblaster.db  # SQLite file location
 
 logging:
-  level: INFO
+  level: WARNING   # passed straight through to uvicorn's own log_level (see __main__.py)
 
 defaults:
   ssh:
@@ -721,6 +721,16 @@ username/password values per preset at runtime, without editing this file or res
 process — a DB-saved override always wins over this file's value for that exact preset+field
 when both exist; a field left unset in the popup just falls back to whatever's configured here.
 
+`logging.level` is passed straight through to uvicorn's own `log_level` (`__main__.py`'s
+`main()`, the `uv run ansiblaster`/Docker entrypoint — not the `uv run uvicorn ... --reload`
+dev-server invocation, which bypasses `__main__.py` and so needs its own `--log-level` flag if
+you want this to apply there too). Defaults to `WARNING` rather than uvicorn's own default of
+`INFO`, since `INFO` logs one access-log line per HTTP request — noisy given how much this
+app's UI polls/refreshes via htmx. Set `ANSIBLASTER_LOGGING__LEVEL=INFO` (or `DEBUG`) to get
+that request-level detail back when actually debugging; any level uvicorn accepts works
+(`CRITICAL`/`ERROR`/`WARNING`/`INFO`/`DEBUG`/`TRACE`, case-insensitive — lowercased before being
+handed to uvicorn, which only accepts lowercase names).
+
 Every key is overridable via an environment variable using the `ANSIBLASTER_` prefix with `__` as
 the nesting delimiter, e.g.:
 
@@ -728,6 +738,7 @@ the nesting delimiter, e.g.:
 - `ANSIBLASTER_ANSIBLE__ROLES_PATH=/srv/ansible/roles`
 - `ANSIBLASTER_ANSIBLE__PLAYBOOKS_PATH=/srv/ansible/playbooks`
 - `ANSIBLASTER_DATABASE__PATH=/data/ansiblaster.db`
+- `ANSIBLASTER_LOGGING__LEVEL=INFO`
 - `ANSIBLASTER_DEFAULTS__SSH__PASSWORD=...` / `ANSIBLASTER_DEFAULTS__WINRM__PASSWORD=...` /
   `ANSIBLASTER_DEFAULTS__PSRP__PASSWORD=...`
 
