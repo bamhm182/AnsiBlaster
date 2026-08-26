@@ -167,6 +167,108 @@ def test_relevant_environment_variables_masks_sensitive_names(monkeypatch):
     assert sensitive is True
 
 
+def test_dir_env_var_overrides_database_and_artifacts_defaults(monkeypatch):
+    monkeypatch.setenv("ANSIBLASTER_DIR", "/home/user/.config/ansiblaster")
+
+    settings = load_settings()
+
+    assert settings.database.path == "/home/user/.config/ansiblaster/ansiblaster.db"
+    assert settings.ansible.artifacts_path == "/home/user/.config/ansiblaster/artifacts"
+    # Unrelated paths are untouched.
+    assert settings.ansible.roles_path == "/opt/ansible/roles"
+
+
+def test_dir_env_var_does_not_override_explicit_database_path(monkeypatch):
+    monkeypatch.setenv("ANSIBLASTER_DIR", "/home/user/.config/ansiblaster")
+    monkeypatch.setenv("ANSIBLASTER_DATABASE__PATH", "/custom/db/ansiblaster.db")
+
+    settings = load_settings()
+
+    assert settings.database.path == "/custom/db/ansiblaster.db"
+    # artifacts_path wasn't separately overridden, so `dir` still applies to it.
+    assert settings.ansible.artifacts_path == "/home/user/.config/ansiblaster/artifacts"
+
+
+def test_dir_env_var_does_not_override_explicit_artifacts_path(monkeypatch):
+    monkeypatch.setenv("ANSIBLASTER_DIR", "/home/user/.config/ansiblaster")
+    monkeypatch.setenv("ANSIBLASTER_ANSIBLE__ARTIFACTS_PATH", "/custom/artifacts")
+
+    settings = load_settings()
+
+    assert settings.ansible.artifacts_path == "/custom/artifacts"
+    assert settings.database.path == "/home/user/.config/ansiblaster/ansiblaster.db"
+
+
+def test_dir_unset_leaves_hardcoded_defaults():
+    settings = load_settings()
+
+    assert settings.dir is None
+    assert settings.database.path == "/opt/ansiblaster/ansiblaster.db"
+    assert settings.ansible.artifacts_path == "/opt/ansiblaster/artifacts"
+
+
+def test_dir_via_yaml_config_file(tmp_path, monkeypatch):
+    config_file = tmp_path / "custom.yaml"
+    config_file.write_text("dir: /srv/ansiblaster-data\n")
+    monkeypatch.setenv(CONFIG_PATH_ENV_VAR, str(config_file))
+
+    settings = load_settings()
+
+    assert settings.database.path == "/srv/ansiblaster-data/ansiblaster.db"
+    assert settings.ansible.artifacts_path == "/srv/ansiblaster-data/artifacts"
+
+
+def test_ansible_path_env_var_overrides_roles_and_playbooks_defaults(monkeypatch):
+    monkeypatch.setenv("ANSIBLASTER_ANSIBLE__PATH", "/srv/ansible")
+
+    settings = load_settings()
+
+    assert settings.ansible.roles_path == "/srv/ansible/roles"
+    assert settings.ansible.playbooks_path == "/srv/ansible/playbooks"
+    # Unrelated paths are untouched.
+    assert settings.ansible.artifacts_path == "/opt/ansiblaster/artifacts"
+
+
+def test_ansible_path_env_var_does_not_override_explicit_roles_path(monkeypatch):
+    monkeypatch.setenv("ANSIBLASTER_ANSIBLE__PATH", "/srv/ansible")
+    monkeypatch.setenv("ANSIBLASTER_ANSIBLE__ROLES_PATH", "/custom/roles")
+
+    settings = load_settings()
+
+    assert settings.ansible.roles_path == "/custom/roles"
+    # playbooks_path wasn't separately overridden, so `path` still applies to it.
+    assert settings.ansible.playbooks_path == "/srv/ansible/playbooks"
+
+
+def test_ansible_path_env_var_does_not_override_explicit_playbooks_path(monkeypatch):
+    monkeypatch.setenv("ANSIBLASTER_ANSIBLE__PATH", "/srv/ansible")
+    monkeypatch.setenv("ANSIBLASTER_ANSIBLE__PLAYBOOKS_PATH", "/custom/playbooks")
+
+    settings = load_settings()
+
+    assert settings.ansible.playbooks_path == "/custom/playbooks"
+    assert settings.ansible.roles_path == "/srv/ansible/roles"
+
+
+def test_ansible_path_unset_leaves_hardcoded_defaults():
+    settings = load_settings()
+
+    assert settings.ansible.path is None
+    assert settings.ansible.roles_path == "/opt/ansible/roles"
+    assert settings.ansible.playbooks_path == "/opt/ansible/playbooks"
+
+
+def test_ansible_path_via_yaml_config_file(tmp_path, monkeypatch):
+    config_file = tmp_path / "custom.yaml"
+    config_file.write_text("ansible:\n  path: /srv/ansible-data\n")
+    monkeypatch.setenv(CONFIG_PATH_ENV_VAR, str(config_file))
+
+    settings = load_settings()
+
+    assert settings.ansible.roles_path == "/srv/ansible-data/roles"
+    assert settings.ansible.playbooks_path == "/srv/ansible-data/playbooks"
+
+
 def test_relevant_environment_variables_sorted_by_name(monkeypatch):
     monkeypatch.setenv("ANSIBLASTER_SERVER__PORT", "9000")
     monkeypatch.setenv("ANSIBLASTER_DATABASE__PATH", "/data/db.sqlite")

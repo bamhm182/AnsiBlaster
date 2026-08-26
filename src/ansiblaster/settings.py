@@ -20,7 +20,7 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -31,6 +31,21 @@ from pydantic_settings import (
 CONFIG_PATH_ENV_VAR = "ANSIBLASTER_CONFIG"
 DEFAULT_CONFIG_FILE = Path("config.yaml")
 
+# AnsiBlaster's own persistent storage (the SQLite db + ansible-runner job artifacts) lives
+# under this directory by default. Kept as named constants -- rather than inlined literals on
+# AnsibleSettings.artifacts_path/DatabaseSettings.path below -- so Settings._apply_dir_override()
+# can recognize "still the built-in default" without repeating the path strings.
+_DEFAULT_DATA_DIR = "/opt/ansiblaster"
+_DEFAULT_ARTIFACTS_PATH = f"{_DEFAULT_DATA_DIR}/artifacts"
+_DEFAULT_DATABASE_PATH = f"{_DEFAULT_DATA_DIR}/ansiblaster.db"
+
+# Same idea, one level down: roles_path/playbooks_path's own built-in defaults, named so
+# AnsibleSettings._apply_path_override() below can recognize "still the built-in default"
+# without repeating the path strings.
+_DEFAULT_ANSIBLE_DIR = "/opt/ansible"
+_DEFAULT_ROLES_PATH = f"{_DEFAULT_ANSIBLE_DIR}/roles"
+_DEFAULT_PLAYBOOKS_PATH = f"{_DEFAULT_ANSIBLE_DIR}/playbooks"
+
 
 class ServerSettings(BaseModel):
     host: str = "0.0.0.0"
@@ -38,13 +53,37 @@ class ServerSettings(BaseModel):
 
 
 class AnsibleSettings(BaseModel):
-    roles_path: str = "/opt/ansible/roles"
-    playbooks_path: str = "/opt/ansible/playbooks"
-    artifacts_path: str = "/opt/ansiblaster/artifacts"
+    roles_path: str = _DEFAULT_ROLES_PATH
+    playbooks_path: str = _DEFAULT_PLAYBOOKS_PATH
+    artifacts_path: str = _DEFAULT_ARTIFACTS_PATH
+
+    # Base directory holding roles_path/playbooks_path as sibling subdirectories (`roles/`,
+    # `playbooks/`) -- set via ANSIBLASTER_ANSIBLE__PATH or this section's own `path:` YAML
+    # key. An alternative to overriding roles_path/playbooks_path individually when both
+    # simply live side by side somewhere other than /opt/ansible, e.g. a single checked-out
+    # Ansible repo laid out as <path>/roles and <path>/playbooks. Mirrors Settings.dir/
+    # _apply_dir_override() below, one level down -- see there for the same caveats.
+    path: str | None = None
+
+    @model_validator(mode="after")
+    def _apply_path_override(self) -> AnsibleSettings:
+        """Fold `path` (ANSIBLASTER_ANSIBLE__PATH) into roles_path/playbooks_path's defaults.
+
+        Same approach as Settings._apply_dir_override() -- only fills in whichever of
+        roles_path/playbooks_path is still exactly the built-in default, so either one set
+        explicitly (env var or YAML) always wins over `path`.
+        """
+        if self.path:
+            base = Path(self.path)
+            if self.roles_path == _DEFAULT_ROLES_PATH:
+                self.roles_path = str(base / "roles")
+            if self.playbooks_path == _DEFAULT_PLAYBOOKS_PATH:
+                self.playbooks_path = str(base / "playbooks")
+        return self
 
 
 class DatabaseSettings(BaseModel):
-    path: str = "/opt/ansiblaster/ansiblaster.db"
+    path: str = _DEFAULT_DATABASE_PATH
 
 
 class LoggingSettings(BaseModel):
@@ -101,6 +140,39 @@ class Settings(BaseSettings):
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     defaults: DefaultsSettings = Field(default_factory=DefaultsSettings)
+
+    # Top-level (not nested under a sub-model), so it's set via the plain env var
+    # ANSIBLASTER_DIR or a top-level `dir:` key in config.yaml -- a single base directory for
+    # AnsiBlaster's own persistent storage, as an alternative to overriding
+    # ansible.artifacts_path/database.path individually when both should simply move
+    # somewhere other than the hardcoded /opt/ansiblaster default (e.g. a non-root `uv run`
+    # checkout on a host where /opt isn't writable: ANSIBLASTER_DIR=/home/user/.config/ansiblaster).
+    # See _apply_dir_override() below for how it's folded in.
+    dir: str | None = None
+
+    @model_validator(mode="after")
+    def _apply_dir_override(self) -> Settings:
+        """Fold `dir` (ANSIBLASTER_DIR) into ansible.artifacts_path/database.path's defaults.
+
+        Only fills in a path that's still exactly the built-in default -- an
+        ansible.artifacts_path/database.path explicitly set (env var or YAML) always wins over
+        `dir`, same as the general "more specific setting wins" precedent elsewhere in this
+        file. Comparing against the hardcoded default string, rather than threading an
+        explicit-vs-default flag through settings_customise_sources()'s source merging, is a
+        deliberate simplification -- the one edge case it misses is a database.path/
+        artifacts_path override that happens to equal the literal default path, which would
+        still be treated as "unset" and replaced by `dir`.
+
+        The resulting directories are created lazily wherever they're first needed (db.py's
+        make_engine(), jobs.py's JobManager) -- same as the hardcoded default -- not here.
+        """
+        if self.dir:
+            base = Path(self.dir)
+            if self.database.path == _DEFAULT_DATABASE_PATH:
+                self.database.path = str(base / "ansiblaster.db")
+            if self.ansible.artifacts_path == _DEFAULT_ARTIFACTS_PATH:
+                self.ansible.artifacts_path = str(base / "artifacts")
+        return self
 
     @classmethod
     def settings_customise_sources(

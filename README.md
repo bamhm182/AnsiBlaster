@@ -114,11 +114,16 @@ Settings live in an optional `config.yaml`, overridable via `ANSIBLASTER_*` envi
 variables. Nothing is required to start the app — every setting has a default.
 
 ```yaml
+# dir: /opt/ansiblaster   # unset by default -- overrides where the db + job artifacts below
+                           # live, all at once, instead of setting each path individually
+
 server:
   host: "0.0.0.0"
   port: 8000
 
 ansible:
+  # path: /opt/ansible   # unset by default -- overrides where roles_path/playbooks_path below
+                          # live, as siblings, instead of setting each path individually
   roles_path: /opt/ansible/roles
   playbooks_path: /opt/ansible/playbooks
   artifacts_path: /opt/ansiblaster/artifacts
@@ -147,7 +152,15 @@ warning above: nothing you submit is persisted past the life of that run); each 
 so leaving one unset just leaves those fields blank rather than falling back to another. Env
 var overrides follow the config file's nesting with `__`, e.g. `ANSIBLASTER_SERVER__PORT`,
 `ANSIBLASTER_ANSIBLE__ROLES_PATH`,
-`ANSIBLASTER_DEFAULTS__SSH__PASSWORD`. Full reference in [`CLAUDE.md`](CLAUDE.md#configuration-file).
+`ANSIBLASTER_DEFAULTS__SSH__PASSWORD`. `dir` is the exception — it's top-level, so it's set via
+the plain `ANSIBLASTER_DIR` env var (no `__`), e.g. `ANSIBLASTER_DIR=/home/user/.config/ansiblaster`
+to move the database and job artifacts there instead of `/opt/ansiblaster` — handy when running
+from a clone on a host where `/opt` isn't writable; both `ansiblaster.db` and `artifacts/` are
+created automatically the first time they're needed, no pre-existing directory required.
+`ansible.path` is the same idea for roles/playbooks: `ANSIBLASTER_ANSIBLE__PATH=/srv/ansible`
+implies `roles_path`/`playbooks_path` of `/srv/ansible/roles`/`/srv/ansible/playbooks` (handy
+when both live side by side, e.g. one checked-out Ansible content repo), unless you also set
+either of those individually. Full reference in [`CLAUDE.md`](CLAUDE.md#configuration-file).
 
 ## Development
 

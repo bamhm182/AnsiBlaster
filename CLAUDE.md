@@ -699,11 +699,17 @@ not an error.
 ```yaml
 # config.yaml — all keys shown with their defaults
 
+# dir: /opt/ansiblaster   # unset by default -- base dir for ansible.artifacts_path/database.path
+                           # below, when both should simply move somewhere other than
+                           # /opt/ansiblaster instead of overriding them individually (see below)
+
 server:
   host: "0.0.0.0"
   port: 8000
 
 ansible:
+  # path: /opt/ansible   # unset by default -- base dir for roles_path/playbooks_path below,
+                          # when both live side by side instead of overriding them individually
   roles_path: /opt/ansible/roles        # directory scanned for roles
   playbooks_path: /opt/ansible/playbooks   # directory scanned for playbook YAML files (role presets)
   artifacts_path: /opt/ansiblaster/artifacts   # base dir for ansible-runner's per-job private_data_dir
@@ -739,6 +745,42 @@ username/password values per preset at runtime, without editing this file or res
 process — a DB-saved override always wins over this file's value for that exact preset+field
 when both exist; a field left unset in the popup just falls back to whatever's configured here.
 
+`dir` (top-level, unset by default) is a single base directory for AnsiBlaster's own persistent
+storage — `ansible.artifacts_path` and `database.path` — as an alternative to overriding those
+two individually when both should simply move somewhere other than the hardcoded
+`/opt/ansiblaster` default, e.g. a non-root `uv run` checkout on a host where `/opt` isn't
+writable: `ANSIBLASTER_DIR=/home/user/.config/ansiblaster` puts the database at
+`~/.config/ansiblaster/ansiblaster.db` and job artifacts under
+`~/.config/ansiblaster/artifacts/`. It only fills in whichever of `ansible.artifacts_path`/
+`database.path` are still at their built-in default — either one explicitly set (env var or this
+file) always wins over `dir` for that one path, so e.g. `dir` plus a separately-overridden
+`database.path` relocates only `artifacts_path`. `settings.py`'s `Settings._apply_dir_override()`
+implements this by comparing against the hardcoded default path strings rather than tracking
+"was this explicitly set" through the settings-source merge — the one edge case that approach
+misses is a `database.path`/`artifacts_path` override that happens to equal the literal default
+path, which would still be treated as unset. Whichever directories are actually in effect
+(`dir`-derived or not) are created automatically, before first use, if missing — `db.py`'s
+`make_engine()` creates `database.path`'s parent directory when the engine is built at startup,
+and `jobs.py`'s `JobManager` creates `artifacts_path` itself when constructed (also at startup),
+in addition to its own per-job subdirectory under it — so nothing here needs the directory to
+already exist ahead of time (a bind-mounted `VOLUME` in the Docker image, or a manually created
+directory on a bare checkout).
+
+`ansible.path` (unset by default) is the same idea one level down, for `ansible.roles_path`/
+`ansible.playbooks_path` instead of `database.path`/`ansible.artifacts_path`: a base directory
+holding both as sibling subdirectories (`roles/`, `playbooks/`), for when roles and playbooks
+simply live side by side somewhere other than the hardcoded `/opt/ansible` default — e.g. a
+single checked-out Ansible content repo laid out as `<path>/roles` and `<path>/playbooks`. Set
+via `ANSIBLASTER_ANSIBLE__PATH=/srv/ansible` or this section's own `path:` key. Same precedence
+and same comparison-against-the-hardcoded-default implementation as `dir` above
+(`AnsibleSettings._apply_path_override()`, right next to `_apply_dir_override()` in
+`settings.py`) — an explicitly-set `roles_path`/`playbooks_path` still wins over `path` for that
+one setting. Unlike `dir`, nothing here creates `path`'s directories: `roles_path`/
+`playbooks_path` are expected to already hold real Ansible content (read-only bind mounts in the
+Docker image), not app-owned storage the app should create on first use — a missing directory is
+handled the same as always, by discovery simply finding nothing there (see "Backend & UI"
+above), never by creating an empty one.
+
 `logging.level` governs the app's own logger (`"ansiblaster"`, and every `ansiblaster.*` module
 logger under it via `logging.getLogger(__name__)`) plus uvicorn's `"uvicorn"`/`"uvicorn.error"`
 loggers (startup/shutdown/errors) — applied in `__main__.py`'s `main()` (the `uv run
@@ -766,12 +808,18 @@ Every key is overridable via an environment variable using the `ANSIBLASTER_` pr
 the nesting delimiter, e.g.:
 
 - `ANSIBLASTER_SERVER__PORT=9000`
+- `ANSIBLASTER_ANSIBLE__PATH=/srv/ansible` (implies `roles_path`/`playbooks_path` of
+  `/srv/ansible/roles`/`/srv/ansible/playbooks`, unless either is itself also set below)
 - `ANSIBLASTER_ANSIBLE__ROLES_PATH=/srv/ansible/roles`
 - `ANSIBLASTER_ANSIBLE__PLAYBOOKS_PATH=/srv/ansible/playbooks`
 - `ANSIBLASTER_DATABASE__PATH=/data/ansiblaster.db`
 - `ANSIBLASTER_LOGGING__LEVEL=INFO`
 - `ANSIBLASTER_DEFAULTS__SSH__PASSWORD=...` / `ANSIBLASTER_DEFAULTS__WINRM__PASSWORD=...` /
   `ANSIBLASTER_DEFAULTS__PSRP__PASSWORD=...`
+
+`dir` is the one exception to the `__`-nesting convention above — it's a top-level field, not
+nested under a sub-model, so it's set via the plain `ANSIBLASTER_DIR` env var (no `__`), e.g.
+`ANSIBLASTER_DIR=/home/user/.config/ansiblaster`.
 
 ## Project layout
 
