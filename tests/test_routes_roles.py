@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from tests.conftest import make_role
 
 
@@ -74,3 +76,22 @@ def test_role_file_path_traversal_404s(client, tmp_path):
     response = client.get("/roles/docker-host/file", params={"path": "../../secret.txt"})
 
     assert response.status_code == 404
+
+
+def test_list_roles_logs_the_loaded_count_at_info(client, tmp_path, caplog):
+    make_role(tmp_path, "docker-host")
+    make_role(tmp_path, "apache")
+
+    with caplog.at_level(logging.INFO, logger="ansiblaster.routes.roles"):
+        client.get("/roles")
+
+    assert "Loaded 2 role(s)" in caplog.text
+
+
+def test_list_roles_logs_missing_directory_at_info(client, caplog):
+    # No make_role() call -- the configured roles directory (under an isolated tmp_path, per
+    # the client fixture) is never created, so this exercises the "missing dir" branch.
+    with caplog.at_level(logging.INFO, logger="ansiblaster.routes.roles"):
+        client.get("/roles")
+
+    assert "does not exist" in caplog.text

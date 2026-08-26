@@ -694,7 +694,7 @@ database:
   path: /opt/ansiblaster/ansiblaster.db  # SQLite file location
 
 logging:
-  level: WARNING   # passed straight through to uvicorn's own log_level (see __main__.py)
+  level: INFO   # governs the app's own logger + uvicorn's startup/error logs -- see below
 
 defaults:
   ssh:
@@ -721,15 +721,28 @@ username/password values per preset at runtime, without editing this file or res
 process — a DB-saved override always wins over this file's value for that exact preset+field
 when both exist; a field left unset in the popup just falls back to whatever's configured here.
 
-`logging.level` is passed straight through to uvicorn's own `log_level` (`__main__.py`'s
-`main()`, the `uv run ansiblaster`/Docker entrypoint — not the `uv run uvicorn ... --reload`
-dev-server invocation, which bypasses `__main__.py` and so needs its own `--log-level` flag if
-you want this to apply there too). Defaults to `WARNING` rather than uvicorn's own default of
-`INFO`, since `INFO` logs one access-log line per HTTP request — noisy given how much this
-app's UI polls/refreshes via htmx. Set `ANSIBLASTER_LOGGING__LEVEL=INFO` (or `DEBUG`) to get
-that request-level detail back when actually debugging; any level uvicorn accepts works
-(`CRITICAL`/`ERROR`/`WARNING`/`INFO`/`DEBUG`/`TRACE`, case-insensitive — lowercased before being
-handed to uvicorn, which only accepts lowercase names).
+`logging.level` governs the app's own logger (`"ansiblaster"`, and every `ansiblaster.*` module
+logger under it via `logging.getLogger(__name__)`) plus uvicorn's `"uvicorn"`/`"uvicorn.error"`
+loggers (startup/shutdown/errors) — applied in `__main__.py`'s `main()` (the `uv run
+ansiblaster`/Docker entrypoint — not the `uv run uvicorn ... --reload` dev-server invocation,
+which bypasses `__main__.py` and so needs its own `--log-level` flag if you want this to apply
+there too). `logging_config.py`'s `build_log_config()` builds the actual `log_config` dict this
+gets turned into; see its docstring for why this is a full custom `log_config`, not uvicorn's
+own `log_level` kwarg (the latter would unconditionally override the access-log split below).
+
+Deliberately **not** governed by `logging.level`: uvicorn's own `"uvicorn.access"` logger (one
+line per HTTP request) is hard-pinned to require `DEBUG` specifically, regardless of what
+`logging.level` is set to — the kind of thing that happens constantly under normal operation,
+as opposed to the app's own occasional-but-meaningful log lines (e.g. `routes/roles.py`/
+`routes/playbooks.py` logging a role/playbook reload's outcome — "Loaded 12 role(s) from
+/opt/ansible/roles." or "Roles directory /opt/ansible/roles does not exist -- showing no
+roles." — at `INFO`, right where a rescan is explicitly triggered, i.e. `GET /roles`/
+`GET /playbooks`, not the main page load). This split is what lets `INFO` be the default
+without also drowning it in a line for every single request: defaults to `INFO` rather than
+`WARNING`, since the reload-outcome lines above are exactly the kind of thing worth seeing
+without reaching for `DEBUG` first. Set `ANSIBLASTER_LOGGING__LEVEL=DEBUG` to get uvicorn's
+per-request access log back too when actually debugging; any level Python's `logging` module
+recognizes works (`CRITICAL`/`ERROR`/`WARNING`/`INFO`/`DEBUG`, case-insensitive).
 
 Every key is overridable via an environment variable using the `ANSIBLASTER_` prefix with `__` as
 the nesting delimiter, e.g.:
@@ -747,7 +760,13 @@ the nesting delimiter, e.g.:
 ```
 src/ansiblaster/
 ├── __init__.py
-├── __main__.py         # entrypoint: uv run ansiblaster → starts uvicorn
+├── __main__.py         # entrypoint: uv run ansiblaster → starts uvicorn, via
+│                       # logging_config.build_log_config(settings.logging.level)
+├── logging_config.py   # build_log_config(): the log_config dict passed to uvicorn.run() --
+│                       # settings.logging.level governs the app's own logger + uvicorn's
+│                       # startup/error logs, but "uvicorn.access" (one line per request) is
+│                       # pinned to require DEBUG regardless -- see its own docstring for why
+│                       # this has to be a full log_config, not uvicorn's own log_level kwarg
 ├── app.py              # FastAPI app factory: creates app, mounts static/, includes routers,
 │                       # wires startup/shutdown (settings load, DB init, JobManager) onto
 │                       # app.state
@@ -840,9 +859,10 @@ src/ansiblaster/
 
 - `tests/` mirrors this layout alongside `src/` (not inside the package): `test_roles.py`,
   `test_role_vars.py`, `test_playbooks.py`, `test_inventory.py`, `test_jobs.py`,
-  `test_portcheck.py`, `test_browse.py`, `test_settings_store.py`, `test_routes_pages.py`,
-  `test_routes_roles.py`, `test_routes_playbooks.py`, `test_routes_runs.py`,
-  `test_routes_target.py`, `test_routes_settings.py`, plus a shared `conftest.py` (the `client`
+  `test_portcheck.py`, `test_browse.py`, `test_settings.py`, `test_settings_store.py`,
+  `test_logging_config.py`, `test_main.py`, `test_routes_pages.py`, `test_routes_roles.py`,
+  `test_routes_playbooks.py`, `test_routes_runs.py`, `test_routes_target.py`,
+  `test_routes_settings.py`, plus a shared `conftest.py` (the `client`
   fixture — a `TestClient` wired to per-test tmp_path roles/playbooks/artifacts/DB paths — and
   `make_role`/`make_playbook` helpers; `make_role` takes an optional `argument_specs=` dict to
   write a `meta/argument_specs.yml` for it).

@@ -47,14 +47,19 @@ class DatabaseSettings(BaseModel):
 
 
 class LoggingSettings(BaseModel):
-    """Passed straight through to uvicorn's own `log_level` (see __main__.py) -- WARNING by
-    default, since uvicorn's INFO level logs one access-log line per HTTP request, which gets
-    noisy fast given how much this app's UI polls/refreshes via htmx. Override with
-    ANSIBLASTER_LOGGING__LEVEL (any level uvicorn accepts: "critical", "error", "warning",
-    "info", "debug", "trace") to get the request-level detail back when actually debugging.
+    """Governs the app's own logger and uvicorn's startup/error logging -- see
+    logging_config.py for how this is actually applied (via a custom `log_config` dict, not
+    uvicorn's `log_level`, which can't express the split logging_config.py needs). uvicorn's
+    own per-request access logging is deliberately *not* governed by this: it's pinned to
+    require DEBUG specifically, regardless of this setting, since it happens constantly under
+    normal operation -- see logging_config.py's docstring. INFO by default, so the app's own
+    infrequent-but-meaningful log lines (a role/playbook reload's outcome -- see
+    routes/roles.py/routes/playbooks.py) show up without also needing DEBUG. Override with
+    ANSIBLASTER_LOGGING__LEVEL (any level Python's logging module recognizes: "critical",
+    "error", "warning", "info", "debug" -- case-insensitive).
     """
 
-    level: str = "WARNING"
+    level: str = "INFO"
 
 
 class TargetCredentials(BaseModel):

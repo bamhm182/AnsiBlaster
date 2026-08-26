@@ -32,7 +32,7 @@ def test_defaults_with_no_config_file_and_no_env_vars():
     assert settings.ansible.playbooks_path == "/opt/ansible/playbooks"
     assert settings.ansible.artifacts_path == "/opt/ansiblaster/artifacts"
     assert settings.database.path == "/opt/ansiblaster/ansiblaster.db"
-    assert settings.logging.level == "WARNING"
+    assert settings.logging.level == "INFO"
     assert settings.defaults.ssh.username == ""
     assert settings.defaults.ssh.password == ""
     assert settings.defaults.winrm.username == ""

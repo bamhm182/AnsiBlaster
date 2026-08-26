@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uvicorn
 
+from ansiblaster.logging_config import build_log_config
 from ansiblaster.settings import get_settings
 
 
@@ -13,11 +14,10 @@ def main() -> None:
         "ansiblaster.app:app",
         host=settings.server.host,
         port=settings.server.port,
-        # Lowercased: uvicorn's own log level names are lowercase ("info", "warning", ...),
-        # while config.yaml/the ANSIBLASTER_LOGGING__LEVEL env var are conventionally written
-        # upper-case (matching Python's own logging module constants) -- see settings.py's
-        # LoggingSettings and CLAUDE.md's "Configuration file" section.
-        log_level=settings.logging.level.lower(),
+        # log_config, not log_level -- see logging_config.py's docstring for why passing both
+        # would silently undo the split it makes between uvicorn's per-request access logging
+        # and everything else.
+        log_config=build_log_config(settings.logging.level),
     )
 
 

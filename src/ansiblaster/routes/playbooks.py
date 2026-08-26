@@ -8,6 +8,9 @@ both of these rely on.
 
 from __future__ import annotations
 
+import logging
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ansiblaster.browse import NotFound, list_playbook_files, read_playbook_file
@@ -16,11 +19,21 @@ from ansiblaster.playbooks import discover_playbooks
 from ansiblaster.settings import Settings
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/playbooks")
 async def list_playbooks(request: Request, settings: Settings = Depends(get_app_settings)):
+    playbooks_path = Path(settings.ansible.playbooks_path)
     playbooks = discover_playbooks(settings.ansible.playbooks_path)
+    # See routes/roles.py's equivalent logging for why this is worth an INFO line: a rescan is
+    # an infrequent, explicit action, not per-request noise.
+    if not playbooks_path.is_dir():
+        logger.info(
+            "Playbooks directory %s does not exist -- showing no playbooks.", playbooks_path
+        )
+    else:
+        logger.info("Loaded %d playbook(s) from %s.", len(playbooks), playbooks_path)
     return templates.TemplateResponse(
         request, "partials/playbook_list.html", {"playbooks": playbooks}
     )
