@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from ansiblaster.settings import CONFIG_PATH_ENV_VAR, get_settings, load_settings
+from ansiblaster.settings import (
+    CONFIG_PATH_ENV_VAR,
+    get_settings,
+    load_settings,
+    relevant_environment_variables,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -119,3 +124,56 @@ def test_get_settings_reflects_env_at_first_call(monkeypatch):
     settings = get_settings()
 
     assert settings.server.port == 6000
+
+
+def test_relevant_environment_variables_empty_by_default():
+    assert relevant_environment_variables() == []
+
+
+def test_relevant_environment_variables_includes_ansiblaster_prefixed_vars(monkeypatch):
+    monkeypatch.setenv("ANSIBLASTER_SERVER__PORT", "9000")
+
+    result = relevant_environment_variables()
+
+    assert result == [("ANSIBLASTER_SERVER__PORT", "9000", False)]
+
+
+def test_relevant_environment_variables_includes_puid_pgid(monkeypatch):
+    monkeypatch.setenv("PUID", "1001")
+    monkeypatch.setenv("PGID", "1001")
+
+    result = relevant_environment_variables()
+
+    assert ("PUID", "1001", False) in result
+    assert ("PGID", "1001", False) in result
+
+
+def test_relevant_environment_variables_excludes_unrelated_vars(monkeypatch):
+    monkeypatch.setenv("PATH", "/usr/bin")
+    monkeypatch.setenv("SOME_OTHER_VAR", "x")
+
+    assert relevant_environment_variables() == []
+
+
+def test_relevant_environment_variables_masks_sensitive_names(monkeypatch):
+    monkeypatch.setenv("ANSIBLASTER_DEFAULTS__SSH__PASSWORD", "hunter2")
+
+    result = relevant_environment_variables()
+
+    assert len(result) == 1
+    name, value, sensitive = result[0]
+    assert name == "ANSIBLASTER_DEFAULTS__SSH__PASSWORD"
+    assert value != "hunter2"
+    assert sensitive is True
+
+
+def test_relevant_environment_variables_sorted_by_name(monkeypatch):
+    monkeypatch.setenv("ANSIBLASTER_SERVER__PORT", "9000")
+    monkeypatch.setenv("ANSIBLASTER_DATABASE__PATH", "/data/db.sqlite")
+
+    result = relevant_environment_variables()
+
+    assert [name for name, _, _ in result] == [
+        "ANSIBLASTER_DATABASE__PATH",
+        "ANSIBLASTER_SERVER__PORT",
+    ]

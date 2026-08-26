@@ -16,6 +16,7 @@ See CLAUDE.md's "Configuration file" section for the full key reference.
 from __future__ import annotations
 
 import os
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -135,3 +136,45 @@ def get_settings() -> Settings:
     so callers throughout the app should use this rather than constructing Settings() again.
     """
     return load_settings()
+
+
+# Env var names that configure AnsiBlaster but fall outside the ANSIBLASTER_ prefix below --
+# read by docker-entrypoint.sh, before this app (or even Python) ever starts, to remap the
+# container's built-in user's uid/gid (see CLAUDE.md's "Distribution" section). Still part of
+# the process's environment by the time the app runs, so still worth surfacing here.
+_UNPREFIXED_RELATED_ENV_VARS = ("PUID", "PGID")
+
+# Env vars whose name suggests a credential -- masked in relevant_environment_variables()'s
+# output rather than shown in the clear, on the same "never show a secret back in plain text"
+# precedent as the rest of this app's password handling (see CLAUDE.md's "runs table" note on
+# why the target password/role variables are never persisted).
+_SENSITIVE_ENV_NAME_RE = re.compile(r"password|secret|token", re.IGNORECASE)
+_MASKED_ENV_VALUE = "•" * 12  # bullet character, not derived from the real value's length
+
+
+def relevant_environment_variables() -> list[tuple[str, str, bool]]:
+    """Currently-set environment variables that configure AnsiBlaster itself, for the Settings
+    popup's read-only Environment tab (see routes/settings.py).
+
+    "Currently set" means only variables actually present in os.environ are returned -- this
+    isn't the full set of ANSIBLASTER_* keys the app recognizes (Settings' own field defaults
+    already document that; see CLAUDE.md's "Configuration file" section), just what's actually
+    overriding them in this process right now. Scope is every `ANSIBLASTER_` (this module's own
+    env_prefix) env var plus PUID/PGID (see _UNPREFIXED_RELATED_ENV_VARS above) -- unrelated
+    environment noise (PATH, HOME, etc.) is deliberately excluded.
+
+    Returns a list of (name, display_value, sensitive) tuples sorted by name. A credential
+    -shaped name (see _SENSITIVE_ENV_NAME_RE) has its value replaced with a fixed mask here,
+    not by the caller/template, so the real value never reaches the modal's HTML at all --
+    `sensitive` is passed through only so the template can style a masked row differently.
+    """
+    names = sorted(
+        [name for name in os.environ if name.startswith("ANSIBLASTER_")]
+        + [name for name in _UNPREFIXED_RELATED_ENV_VARS if name in os.environ]
+    )
+    result = []
+    for name in names:
+        sensitive = bool(_SENSITIVE_ENV_NAME_RE.search(name))
+        value = _MASKED_ENV_VALUE if sensitive else os.environ[name]
+        result.append((name, value, sensitive))
+    return result

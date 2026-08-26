@@ -1265,6 +1265,19 @@ body.is-resizing {
   margin-top: 0.2rem;
 }
 
+/* Environment tab: read-only rows, so .settings-var-value here is a <code>, not an <input> --
+   it inherits that class's padding/background/border for a consistent "field" look, plus
+   word-break since a long value (a filesystem path, say) has nowhere else to go without one. */
+.settings-env-value {
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+.settings-env-value-masked {
+  color: var(--fg-muted);
+  font-style: italic;
+  letter-spacing: 0.05em;
+}
+
 /* ---------- Toast notifications (showToast() in base.html) ---------- */
 
 .toast-container {
