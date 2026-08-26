@@ -433,9 +433,10 @@ logs) is persisted so past runs can be reviewed later.
 Distinct from the static, config-file-driven "Settings" above (same name, different thing --
 this is the gear-icon popup in the app's own UI, not `config.yaml`): a small set of **runtime,
 DB-backed overrides**, editable from a modal opened via a cog button in the title bar (top
-right, next to "AnsiBlaster" -- `base.html`). The modal has two tabs, **Role Variables** and
-**Host Variables** (`.settings-tab`/`.settings-tab-content`, switched purely client-side by
-`switchSettingsTab()` -- same technique as the bottom panel's Log/History/Viewer tabs):
+right, next to "AnsiBlaster" -- `base.html`). The modal has three tabs, **Role Variables**,
+**Host Variables**, and **Environment** (`.settings-tab`/`.settings-tab-content`, switched purely
+client-side by `switchSettingsTab()` -- same technique as the bottom panel's Log/History/Viewer
+tabs):
 
 - **Role Variables tab** -- overrides for what a role variable (declared via a role's
   `meta/argument_specs.yml` -- see "Role variables (argument_specs)" above) autofills to when
@@ -474,6 +475,23 @@ right, next to "AnsiBlaster" -- `base.html`). The modal has two tabs, **Role Var
   override for that exact preset+field rather than saving an empty string over a real
   configured default. Saved all at once via a single **"Save Host Settings"** button
   (`POST /settings/host`).
+- **Environment tab** -- read-only, unlike the two tabs above: lists every environment variable
+  actually set in the running process that configures AnsiBlaster itself, so an admin can
+  confirm what's really in effect without shelling into the container. Scope is every
+  `ANSIBLASTER_*` variable (this app's own env-var-override prefix, see "Configuration file"
+  below) plus `PUID`/`PGID` (consumed by `docker-entrypoint.sh` before the app itself starts,
+  see "Distribution" below) -- unrelated environment noise (`PATH`, `HOME`, etc.) is excluded,
+  and only variables actually *set* are listed, not the full set of keys the app recognizes (an
+  unset one just doesn't appear -- there's no "unset" row). A value whose variable name contains
+  "password", "secret", or "token" (case-insensitive) is masked with a fixed placeholder rather
+  than shown -- and masked server-side, in `settings.py`'s `relevant_environment_variables()`
+  itself, not just styled differently client-side, so the real value never reaches the modal's
+  HTML at all regardless of who might view-source it. Backed entirely by `os.environ` at render
+  time, not the `Setting` DB table the other two tabs use, so this tab has no `routes/settings.py`
+  endpoint of its own -- `_render_modal_body()` just calls `relevant_environment_variables()`
+  alongside its existing DB lookups and threads the result into the same
+  `partials/settings_modal_body.html` render every other route here already returns, same as
+  everything else in this fragment.
 
 Each variable field in the Deploy column's Variables area also carries its own "Save as
 Default" icon button (`saveVariableAsDefault()` in `index.html`), saving that field's *current*
@@ -665,7 +683,7 @@ one column/table per override kind.
 | `GET /runs/{job_id}/log` | Full plain-text log — used for replaying a finished run, or backfilling before SSE attaches |
 | `POST /runs/{job_id}/cancel` | Cancel an in-progress run (`ansible-runner` stop) → status becomes `canceled` |
 | `GET /target/check-port` | JSON `{"open": bool, "banner": str \| null}` — quick, service-agnostic TCP reachability + banner check for the Deploy column's Status row (`host`/`port` query params) |
-| `GET /settings` | HTMX fragment — the Settings popup's body (`partials/settings_modal_body.html`), listing current role-variable-default and host-default overrides |
+| `GET /settings` | HTMX fragment — the Settings popup's body (`partials/settings_modal_body.html`), listing current role-variable-default and host-default overrides, plus the read-only Environment tab's currently-set `ANSIBLASTER_*`/`PUID`/`PGID` env vars |
 | `POST /settings/role-variables` | Add or update one role-variable-default override (`name`, `value`); returns the refreshed popup body |
 | `POST /settings/role-variables/bulk` | Save every existing role-variable override at once (`value[<name>]` per row, from the Role Variables tab's single "Save Role Variables" button); returns the refreshed popup body |
 | `DELETE /settings/role-variables/{name}` | Remove one role-variable-default override; returns the refreshed popup body |
@@ -774,7 +792,9 @@ src/ansiblaster/
 │                       # get_session_factory, get_job_manager, all reading app.state) plus
 │                       # the Jinja2Templates instance. Kept separate from app.py so route
 │                       # modules can import it without an app.py <-> routes circular import
-├── settings.py         # YAML config + env var overrides → Settings object
+├── settings.py         # YAML config + env var overrides → Settings object. Also
+│                       # relevant_environment_variables(): currently-set ANSIBLASTER_*/PUID/
+│                       # PGID env vars for the Settings popup's read-only Environment tab
 ├── db.py               # SQLAlchemy engine/session factory, declarative Base, init_db()
 ├── models.py           # Run ORM model + RunStatus enum, plus the generic Setting(key, value)
 │                       # model backing the Settings popup (see settings_store.py)
@@ -824,7 +844,9 @@ src/ansiblaster/
 │                       # POST /settings/role-variables/bulk,
 │                       # DELETE /settings/role-variables/{name}, POST /settings/host -- see
 │                       # "Settings popup". Every route returns the same
-│                       # partials/settings_modal_body.html fragment, freshly re-rendered
+│                       # partials/settings_modal_body.html fragment, freshly re-rendered, also
+│                       # threading in settings.py's relevant_environment_variables() for the
+│                       # Environment tab (no route of its own -- it's read-only, not DB-backed)
 ├── templates/
 │   ├── base.html         # Title bar (incl. the Settings popup's cog button) + the modal
 │   │                     # overlay shell itself, plus the modal's own tab-switching/
@@ -844,10 +866,10 @@ src/ansiblaster/
 │       │                       # buttons (the Settings popup itself has no per-row save
 │       │                       # buttons -- see "Settings popup")
 │       ├── settings_icon.html  # the title bar's cog button SVG
-│       ├── settings_modal_body.html  # the Settings popup's content -- two tabs (Role
-│       │                             # Variables, Host Variables), rendered by GET /settings
-│       │                             # and every settings/* route's response (see "Settings
-│       │                             # popup")
+│       ├── settings_modal_body.html  # the Settings popup's content -- three tabs (Role
+│       │                             # Variables, Host Variables, read-only Environment),
+│       │                             # rendered by GET /settings and every settings/* route's
+│       │                             # response (see "Settings popup")
 │       ├── run_list.html
 │       ├── run_row.html     # single history-list item; opened via a delegated fetch(),
 │       │                   # not hx-get (see "Backend & UI")

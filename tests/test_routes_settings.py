@@ -150,6 +150,41 @@ def test_settings_modal_has_role_and_host_tabs(client):
     assert 'data-settings-content="host-variables"' in response.text
 
 
+def test_settings_modal_has_environment_tab(client):
+    response = client.get("/settings")
+    assert 'data-settings-tab="environment"' in response.text
+    assert 'data-settings-content="environment"' in response.text
+
+
+def test_environment_tab_shows_the_test_fixtures_own_env_vars(client):
+    # The `client` fixture (conftest.py) itself sets several ANSIBLASTER_* env vars to isolate
+    # each test's roles/playbooks/artifacts/DB paths -- those are real, currently-set env vars,
+    # so they're expected to show up here rather than an empty-state message.
+    response = client.get("/settings")
+    assert "ANSIBLASTER_DATABASE__PATH" in response.text
+    assert "No AnsiBlaster-related environment variables are currently set." not in response.text
+
+
+def test_environment_tab_lists_ansiblaster_env_vars(client, monkeypatch):
+    monkeypatch.setenv("ANSIBLASTER_LOGGING__LEVEL", "DEBUG")
+    response = client.get("/settings")
+    assert "ANSIBLASTER_LOGGING__LEVEL" in response.text
+    assert "DEBUG" in response.text
+
+
+def test_environment_tab_masks_sensitive_values(client, monkeypatch):
+    monkeypatch.setenv("ANSIBLASTER_DEFAULTS__SSH__PASSWORD", "hunter2")
+    response = client.get("/settings")
+    assert "ANSIBLASTER_DEFAULTS__SSH__PASSWORD" in response.text
+    assert "hunter2" not in response.text
+
+
+def test_environment_tab_ignores_unrelated_env_vars(client, monkeypatch):
+    monkeypatch.setenv("SOME_UNRELATED_VAR", "whatever")
+    response = client.get("/settings")
+    assert "SOME_UNRELATED_VAR" not in response.text
+
+
 def test_role_variable_row_has_no_per_row_save_button(client):
     client.post("/settings/role-variables", data={"name": "mysql_port", "value": "3306"})
     response = client.get("/settings")

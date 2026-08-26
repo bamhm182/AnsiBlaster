@@ -1,7 +1,9 @@
 """The Settings popup: GET /settings (the modal's body fragment) plus the endpoints that save/
 delete a role-variable-default override or save host credential overrides -- see
 settings_store.py for the DB-backed key/value store this all reads and writes, and CLAUDE.md's
-"Settings" section for the feature's design.
+"Settings" section for the feature's design. The modal's third tab, Environment, is read-only
+(backed by settings.py's relevant_environment_variables(), not the DB) and so has no route of
+its own -- it rides along in every render of the fragment below like everything else here.
 
 Every route here returns the same `partials/settings_modal_body.html` fragment (mirroring
 routes/runs.py's re-fetch-and-re-render pattern for run_detail.html), so the modal reflects
@@ -17,7 +19,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 
 from ansiblaster.db import session_scope
 from ansiblaster.deps import get_app_settings, get_session_factory, templates
-from ansiblaster.settings import Settings
+from ansiblaster.settings import Settings, relevant_environment_variables
 from ansiblaster.settings_store import (
     HOST_FIELDS,
     HOST_PRESETS,
@@ -60,6 +62,10 @@ def _render_modal_body(request: Request, settings: Settings, session):
             "host_config_defaults": {
                 preset: getattr(settings.defaults, preset) for preset in HOST_PRESETS
             },
+            # Read-only -- see settings.py's relevant_environment_variables() docstring for
+            # scope/masking. Recomputed on every render like everything else here, though
+            # nothing in this module's own routes actually changes it.
+            "environment_variables": relevant_environment_variables(),
         },
     )
 

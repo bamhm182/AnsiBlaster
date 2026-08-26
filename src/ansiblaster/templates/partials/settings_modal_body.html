@@ -1,11 +1,14 @@
-<!-- Two tabs, switched purely client-side (switchSettingsTab() in base.html) -- this whole
+<!-- Three tabs, switched purely client-side (switchSettingsTab() in base.html) -- this whole
      fragment gets swapped wholesale on every mutating action below (add/save/delete an
      override, save host settings), so base.html re-applies whichever tab (and, for Role
      Variables, filter query) was last active right after each swap rather than always
-     resetting to the first one/an empty filter. -->
+     resetting to the first one/an empty filter. Environment is read-only (see routes/
+     settings.py) so it never triggers a swap itself, but stays selected across one triggered
+     by either of the other two tabs, same as they do for each other. -->
 <div class="settings-tabs">
   <button type="button" class="settings-tab active" data-settings-tab="role-variables">Role Variables</button>
   <button type="button" class="settings-tab" data-settings-tab="host-variables">Host Variables</button>
+  <button type="button" class="settings-tab" data-settings-tab="environment">Environment</button>
 </div>
 
 <!-- Role Variables tab is its own fixed-top/scrolling-middle/fixed-bottom flex column (see
@@ -125,5 +128,34 @@
       {% endfor %}
       <button type="submit" class="apply-button">Save Host Settings</button>
     </form>
+  </section>
+</div>
+
+<!-- Read-only -- backed by settings.py's relevant_environment_variables(), not the DB, so
+     there's nothing here to save/delete. Only variables actually set in this process's
+     environment are listed (see that function's docstring for exact scope); a credential
+     -shaped name arrives already masked from the backend, never as its real value, so there's
+     nothing sensitive in this markup regardless of who can view-source it. -->
+<div class="settings-tab-content" data-settings-content="environment" hidden>
+  <section class="settings-section">
+    <h3>Environment Variables</h3>
+    <p class="settings-hint">
+      <code>ANSIBLASTER_*</code> config overrides (see CLAUDE.md's "Configuration file" section)
+      plus <code>PUID</code>/<code>PGID</code> (the container's uid/gid remap), currently set in
+      this process's environment. Read-only -- change these via your shell, container, or
+      <code>docker-compose.yml</code> environment, not here; restart AnsiBlaster for a change to
+      take effect. Values that look like a credential (name containing "password", "secret", or
+      "token") are masked.
+    </p>
+    <div class="settings-var-list">
+      {% for name, value, sensitive in environment_variables %}
+        <div class="settings-var-row settings-env-row">
+          <span class="settings-var-name settings-env-name" title="{{ name }}">{{ name }}</span>
+          <code class="settings-var-value settings-env-value{{ ' settings-env-value-masked' if sensitive else '' }}">{{ value }}</code>
+        </div>
+      {% else %}
+        <p class="empty-hint">No AnsiBlaster-related environment variables are currently set.</p>
+      {% endfor %}
+    </div>
   </section>
 </div>
