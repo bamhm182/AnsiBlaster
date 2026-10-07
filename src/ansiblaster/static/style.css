@@ -979,6 +979,16 @@ body.is-resizing {
   font-size: 0.8rem;
 }
 
+.run-progress {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--cyan);
+  margin-bottom: 0.4rem;
+}
+.run-progress::before {
+  content: "\27F3  ";
+}
+
 .run-log {
   background: var(--bg);
   border: 1px solid var(--bg-inset);

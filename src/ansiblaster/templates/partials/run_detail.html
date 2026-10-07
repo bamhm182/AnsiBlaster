@@ -43,5 +43,11 @@
     </button>
   {% endif %}
 
+  {% if is_active %}
+    {# Filled in client-side with the current task and how long it's been running -- see
+       trackRunProgress() in index.html. #}
+    <div class="run-progress" aria-live="polite">Starting&hellip;</div>
+  {% endif %}
+
   <pre class="run-log">{{ initial_log }}</pre>
 </div>

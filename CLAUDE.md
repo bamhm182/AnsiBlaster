@@ -370,6 +370,21 @@ works behind a path-stripping proxy too.
   though the log lines themselves streamed in fine (`sse-swap="message"` did work reliably;
   only the completion signal didn't). Hand-rolling both halves in JS avoids the mismatch and
   keeps one code path instead of mixing two mechanisms for one conceptual stream.
+- Stream lines are sent **unescaped** (`_format_sse_event()` in `routes/runs.py`): the client
+  only ever inserts them via `textContent`, which never interprets markup, so escaping on the
+  server too showed literal `&quot;`/`&lt;` in the log. While a job's queue is idle the stream
+  emits a `: keepalive` SSE comment every `_SSE_KEEPALIVE_SECONDS` (10s), and the response
+  carries `Cache-Control: no-cache, no-transform` + `X-Accel-Buffering: no` -- together these
+  stop a reverse proxy (nginx, Coder, etc.) from buffering the stream or dropping it as idle
+  during a long, silent task, which otherwise made output appear in delayed bursts.
+- Ansible itself prints nothing *inside* a task until that task finishes, so a long task looks
+  exactly like a hung one. `run_detail.html` therefore renders a `.run-progress` line while a
+  run is active, which `trackRunProgress()` in `index.html` keeps showing as
+  "TASK [role : name] · m:ss" -- every `TASK`/`RUNNING HANDLER` banner line (matched per line,
+  since one SSE event can carry several) restarts the clock, a once-a-second timer per run
+  redraws it, and `closeRunStream()` stops that timer. A run opened mid-flight seeds it from
+  the last banner in its initial log. `appendRunLogLine()` auto-scrolls the run's tab only if
+  it was already scrolled to the bottom.
 - `message` events append to that run's `<pre class="run-log">` via plain `textContent +=`;
   the `done` event closes the `EventSource` and re-`fetch()`es `/runs/{job_id}`, feeding the
   result back into `openRunTab()` (see below) to refresh the tab in place with the final

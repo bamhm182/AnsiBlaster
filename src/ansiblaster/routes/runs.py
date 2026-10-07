@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import html
+import asyncio
 import re
 from collections.abc import AsyncIterator
 from typing import Any
@@ -211,7 +211,17 @@ async def run_stream(job_id: str, job_manager: JobManager = Depends(get_job_mana
 
     async def event_generator() -> AsyncIterator[str]:
         while True:
-            item = await job.queue.get()
+            try:
+                # Plain queue.get(), no thread-pool call underneath, so wait_for()'s
+                # cancel-then-unwind behavior is safe here (see portcheck.py's docstring for
+                # the case where it isn't).
+                item = await asyncio.wait_for(job.queue.get(), timeout=_SSE_KEEPALIVE_SECONDS)
+            except TimeoutError:
+                # A long task prints nothing until it finishes. An SSE comment line keeps
+                # bytes flowing meanwhile, so a reverse proxy neither times the idle
+                # connection out nor sits on whatever it has buffered; EventSource ignores it.
+                yield ": keepalive\n\n"
+                continue
             if item is STREAM_DONE:
                 # No payload needed: run_detail.html's container listens for this event via
                 # hx-trigger="sse:done" and just re-fetches the whole fragment, which reflects
@@ -220,7 +230,14 @@ async def run_stream(job_id: str, job_manager: JobManager = Depends(get_job_mana
                 break
             yield _format_sse_event(item)
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        # Ask anything between us and the browser to pass each event straight through:
+        # no caching, no compression (which buffers until a block fills), and nginx's
+        # proxy buffering off (X-Accel-Buffering is the per-response switch for it).
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/{job_id}/cancel")
@@ -233,6 +250,11 @@ async def cancel_run(job_id: str, job_manager: JobManager = Depends(get_job_mana
     # will trigger run_detail.html to refresh itself once that happens, so this response only
     # needs to acknowledge the request, not reflect the final state.
     return HTMLResponse('<span class="cancel-pending">Cancel requested&hellip;</span>')
+
+
+# How long the SSE stream may sit silent (e.g. during a slow task) before it sends a
+# keepalive comment -- comfortably under common proxy idle timeouts (nginx's default is 60s).
+_SSE_KEEPALIVE_SECONDS = 10
 
 
 def _get_run_or_404(session_factory: sessionmaker[Session], job_id: str) -> Run:
@@ -257,10 +279,10 @@ def _format_sse_event(data: str) -> str:
     """Format one ansible-runner stdout chunk as an SSE 'message' event.
 
     Each line becomes its own `data:` line per the SSE spec (a single data field can't
-    contain a literal newline). Lines are HTML-escaped because htmx's sse extension swaps
-    event data in as raw HTML (hx-swap="beforeend" on the log <pre>) -- escaping keeps
-    arbitrary task/module output from being interpreted as markup.
+    contain a literal newline). Lines are sent as-is, *not* HTML-escaped: the client
+    (connectRunStream() in index.html) appends them via textContent, which never interprets
+    markup -- escaping here as well would show literal "&quot;"/"&lt;" in the log.
     """
     lines = data.splitlines() or [""]
-    body = "\n".join(f"data: {html.escape(line)}" for line in lines)
+    body = "\n".join(f"data: {line}" for line in lines)
     return f"{body}\n\n"

@@ -694,14 +694,81 @@
   // ---------------------------------------------------------------------
   const activeEventSources = {};
 
+  // ---------------------------------------------------------------------
+  // Live progress line (run_detail.html's .run-progress, only rendered while a run is active):
+  // "TASK [role : name] · 1:23". Ansible prints nothing *inside* a task until it finishes, so
+  // without this a long task (a big apt install, a slow download) looks exactly like a hung
+  // one. Each TASK/RUNNING HANDLER banner line restarts the clock; a once-a-second timer per
+  // run redraws it, and closeRunStream() stops that timer.
+  // ---------------------------------------------------------------------
+  const TASK_BANNER_RE = /^((?:TASK|RUNNING HANDLER) \[.*\]) \**$/;
+  const runProgress = {};
+
+  function formatElapsed(ms) {
+    const total = Math.floor(ms / 1000);
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const seconds = String(total % 60).padStart(2, "0");
+    return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}` : `${minutes}:${seconds}`;
+  }
+
+  function renderRunProgress(runId) {
+    const progress = runProgress[runId];
+    const el = document.querySelector(`.run-tab-content[data-run-id="${runId}"] .run-progress`);
+    if (!progress || !el) return;
+    el.textContent = progress.label
+      ? `${progress.label} · ${formatElapsed(Date.now() - progress.since)}`
+      : "Starting…";
+  }
+
+  function trackRunProgress(runId, line) {
+    const progress = (runProgress[runId] ??= { label: "", since: Date.now(), timer: null });
+    const match = line.match(TASK_BANNER_RE);
+    if (match) {
+      progress.label = match[1];
+      progress.since = Date.now();
+    } else if (line.startsWith("PLAY RECAP")) {
+      progress.label = "Finishing";
+      progress.since = Date.now();
+    }
+    progress.timer ??= setInterval(() => renderRunProgress(runId), 1000);
+    renderRunProgress(runId);
+  }
+
+  function stopRunProgress(runId) {
+    const progress = runProgress[runId];
+    if (progress) clearInterval(progress.timer);
+    delete runProgress[runId];
+  }
+
+  // Appends one line, following the bottom of the log only if the user was already there --
+  // scrolling up to read earlier output isn't yanked back down by every new line.
+  function appendRunLogLine(runId, line) {
+    const content = document.querySelector(`.run-tab-content[data-run-id="${runId}"]`);
+    const pre = content?.querySelector(".run-log");
+    if (!pre) return;
+    const atBottom = content.scrollHeight - content.scrollTop - content.clientHeight < 40;
+    pre.textContent += line + "\n";
+    if (atBottom) content.scrollTop = content.scrollHeight;
+  }
+
   function connectRunStream(runId) {
     if (activeEventSources[runId]) return;
     const source = new EventSource(`runs/${runId}/stream`);
     activeEventSources[runId] = source;
 
+    // A run opened mid-flight (e.g. from History) already has output in its initial log --
+    // seed the progress line from its last banner rather than showing "Starting…".
+    const initialLog =
+      document.querySelector(`.run-tab-content[data-run-id="${runId}"] .run-log`)?.textContent || "";
+    const lines = initialLog.split("\n");
+    const lastBanner = lines.findLast((line) => TASK_BANNER_RE.test(line)) ?? "";
+    trackRunProgress(runId, lastBanner);
+
     source.addEventListener("message", (evt) => {
-      const pre = document.querySelector(`.run-tab-content[data-run-id="${runId}"] .run-log`);
-      if (pre) pre.textContent += evt.data + "\n";
+      appendRunLogLine(runId, evt.data);
+      // One event can carry several lines (e.g. a blank line + a TASK banner).
+      evt.data.split("\n").forEach((line) => trackRunProgress(runId, line));
     });
 
     source.addEventListener("done", async () => {
@@ -724,6 +791,7 @@
   }
 
   function closeRunStream(runId) {
+    stopRunProgress(runId);
     const source = activeEventSources[runId];
     if (source) {
       source.close();

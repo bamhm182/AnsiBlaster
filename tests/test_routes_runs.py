@@ -315,6 +315,25 @@ def test_run_stream_returns_lines_then_done_event(client, tmp_path, monkeypatch)
     assert "event: done" in response.text
 
 
+def test_run_stream_sends_lines_unescaped_with_no_buffering_headers(client, tmp_path, monkeypatch):
+    """The client appends lines via textContent, so server-side HTML escaping would show up
+    literally (&quot; instead of ") -- lines must go out as-is."""
+    make_role(tmp_path, "docker-host")
+    monkeypatch.setattr(
+        "ansiblaster.jobs.ansible_runner.run_async",
+        _fake_run_async([], stdout_lines=['ok: [h] => {"msg": "<b> & co"}']),
+    )
+    client.post("/runs", data=_base_form(roles=["docker-host"]))
+    run = _only_run(client)
+
+    response = client.get(f"/runs/{run.id}/stream")
+
+    assert 'data: ok: [h] => {"msg": "<b> & co"}' in response.text
+    assert "&quot;" not in response.text
+    assert response.headers["cache-control"] == "no-cache, no-transform"
+    assert response.headers["x-accel-buffering"] == "no"
+
+
 def test_cancel_unknown_job_404(client):
     response = client.post("/runs/does-not-exist/cancel")
 
