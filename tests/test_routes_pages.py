@@ -66,3 +66,13 @@ def test_index_embeds_os_defaults_as_raw_js_not_html_escaped(make_client):
     assert '"deploy"' in response.text
     assert "&#34;deploy&#34;" not in response.text
     assert "&#34;" not in response.text.split("<script>", 1)[1]
+
+
+def test_index_exposes_url_parameter_hooks(client):
+    """applyUrlParams() (client-side) selects port presets by data-preset -- both must ship."""
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "applyUrlParams" in response.text
+    for preset in ("ssh", "winrm", "winrm-secure", "psrp", "psrp-secure"):
+        assert f'data-preset="{preset}"' in response.text

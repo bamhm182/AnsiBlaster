@@ -101,11 +101,13 @@
                     aria-label="Port preset"
                     onchange="applyPortPreset(this)"
                   >
-                    <option value="{{ default_ports['linux'] }}" data-os="linux" selected>SSH</option>
-                    <option value="{{ default_ports['windows'] }}" data-os="windows">WinRM</option>
-                    <option value="{{ windows_https_port }}" data-os="windows">WinRM (Secure)</option>
-                    <option value="{{ default_ports['windows_psrp'] }}" data-os="windows_psrp">PSRP</option>
-                    <option value="{{ windows_https_port }}" data-os="windows_psrp">PSRP (Secure)</option>
+                    <!-- data-preset is the name a ?preset= URL parameter selects it by (see
+                         applyUrlParams() below). -->
+                    <option value="{{ default_ports['linux'] }}" data-os="linux" data-preset="ssh" selected>SSH</option>
+                    <option value="{{ default_ports['windows'] }}" data-os="windows" data-preset="winrm">WinRM</option>
+                    <option value="{{ windows_https_port }}" data-os="windows" data-preset="winrm-secure">WinRM (Secure)</option>
+                    <option value="{{ default_ports['windows_psrp'] }}" data-os="windows_psrp" data-preset="psrp">PSRP</option>
+                    <option value="{{ windows_https_port }}" data-os="windows_psrp" data-preset="psrp-secure">PSRP (Secure)</option>
                   </select>
                   <input type="number" name="target_port" id="target-port-input"
                          value="{{ default_ports['linux'] }}" required>
@@ -1030,6 +1032,140 @@
 
   syncSelectedRolesSummary();
   syncRoleVariables();
+
+  // ---------------------------------------------------------------------
+  // URL query parameters: pre-fill the Deploy column (and optionally auto-submit it) from the
+  // page's own address, so a run can be bookmarked/linked/scripted, e.g.
+  //   ?playbook=lamp&role=extra&vars[mysql][mysql_port]=3307&host=10.0.0.5&execute=1
+  // Supported parameters (all optional, see CLAUDE.md's "URL parameters" section):
+  //   playbook / playbooks   playbook name(s) to apply -- repeatable and/or comma-separated
+  //   role / roles           role name(s) to check -- same
+  //   preset                 ssh | winrm | winrm-secure | psrp | psrp-secure
+  //   host, port, user (or username), password -- the Host fieldset's fields
+  //   vars[<role>][<name>]   a variable for one role
+  //   vars[<name>]           a variable for every selected role that declares <name>
+  //   execute=1              click Apply once everything above is filled in
+  // Purely client-side -- it only drives the same controls a user would, so POST /runs and
+  // its validation are unchanged. Runs on DOMContentLoaded rather than inline, since
+  // showToast() lives in base.html's script, which comes after this one in the document.
+  // ---------------------------------------------------------------------
+  function urlParamList(params, ...keys) {
+    return keys
+      .flatMap((key) => params.getAll(key))
+      .flatMap((value) => value.split(","))
+      .map((value) => value.trim())
+      .filter(Boolean);
+  }
+
+  function applyUrlParams() {
+    const params = new URLSearchParams(window.location.search);
+    if (Array.from(params.keys()).length === 0) return;
+    const problems = [];
+
+    // Preset first: applyPortPreset() resets port/username/password to that preset's
+    // defaults, which any explicit host/port/user/password parameter below then overrides.
+    const preset = params.get("preset");
+    if (preset) {
+      const select = document.getElementById("target-port-preset");
+      const option = Array.from(select.options).find(
+        (opt) => opt.dataset.preset === preset.trim().toLowerCase()
+      );
+      if (option) {
+        select.selectedIndex = option.index;
+        applyPortPreset(select);
+      } else {
+        problems.push(`unknown preset "${preset}"`);
+      }
+    }
+
+    const fields = {
+      "target-host-input": ["host", "target_host"],
+      "target-port-input": ["port", "target_port"],
+      "target-user-input": ["user", "username", "target_user"],
+      "target-password-input": ["password", "target_password"],
+    };
+    Object.entries(fields).forEach(([id, keys]) => {
+      const key = keys.find((k) => params.has(k));
+      if (key) document.getElementById(id).value = params.get(key);
+    });
+
+    urlParamList(params, "playbook", "playbooks").forEach((name) => {
+      const button = document.querySelector(
+        `.playbook-button[data-playbook="${CSS.escape(name)}"]`
+      );
+      if (button) applyPlaybook(button);
+      else problems.push(`unknown playbook "${name}"`);
+    });
+    urlParamList(params, "role", "roles").forEach((name) => {
+      const checkbox = document.getElementById("role-" + name);
+      if (checkbox) checkbox.checked = true;
+      else problems.push(`unknown role "${name}"`);
+    });
+    syncSelectedRolesSummary();
+
+    // Variables only make sense against the roles now checked, so they're resolved last.
+    // A per-role vars[<role>][<name>] wins over a global vars[<name>] for that role.
+    const specs = {};
+    document.querySelectorAll('input[name="roles"]:checked').forEach((el) => {
+      specs[el.value] = JSON.parse(el.dataset.vars || "{}");
+    });
+    const values = {};
+    const setValue = (role, name, value) => {
+      const spec = specs[role][name];
+      // buildVarRow() only treats "true" as a checked checkbox, so normalize the usual
+      // truthy spellings (matching routes/runs.py's own bool coercion) for bool variables.
+      if (spec.type === "bool") value = String(/^(1|true|yes|on)$/i.test(value.trim()));
+      (values[role] ??= {})[name] = value;
+    };
+    const perRole = [];
+    for (const [key, value] of params) {
+      let match = key.match(/^vars\[([^\]]+)\]\[([^\]]+)\]$/);
+      if (match) {
+        perRole.push([match[1], match[2], value]);
+        continue;
+      }
+      match = key.match(/^vars\[([^\]]+)\]$/);
+      if (match) {
+        const owners = Object.keys(specs).filter((role) => match[1] in specs[role]);
+        if (owners.length === 0) problems.push(`no selected role declares variable "${match[1]}"`);
+        owners.forEach((role) => setValue(role, match[1], value));
+      }
+    }
+    perRole.forEach(([role, name, value]) => {
+      if (!(role in specs)) problems.push(`variable for unselected role "${role}"`);
+      else if (!(name in specs[role])) problems.push(`role "${role}" has no variable "${name}"`);
+      else setValue(role, name, value);
+    });
+    syncRoleVariables(values);
+
+    if (document.getElementById("target-host-input").value.trim()) checkTargetPort();
+
+    if (problems.length > 0) {
+      showToast("URL parameters: " + problems.join("; ") + ".", "error");
+    }
+
+    if (params.get("execute") === "1") {
+      // Drop execute from the address bar first, so reloading the page (or going back to it)
+      // pre-fills the form again without silently launching a second run.
+      params.delete("execute");
+      const query = params.toString();
+      window.history.replaceState(
+        null, "", window.location.pathname + (query ? "?" + query : "") + window.location.hash
+      );
+      // Never auto-run something other than what the link asked for: any unresolved
+      // playbook/role/variable above blocks the automatic Apply, leaving the form for review.
+      if (problems.length > 0) {
+        showToast("Not executing automatically -- fix the URL parameters above first.", "error");
+      } else if (!applyForm.checkValidity()) {
+        applyForm.reportValidity();
+        showToast("Not executing automatically -- required fields are missing.", "error");
+      } else {
+        applyForm.requestSubmit();
+      }
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", applyUrlParams);
 </script>
 
 {% endblock %}

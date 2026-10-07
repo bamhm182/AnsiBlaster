@@ -162,6 +162,30 @@ implies `roles_path`/`playbooks_path` of `/srv/ansible/roles`/`/srv/ansible/play
 when both live side by side, e.g. one checked-out Ansible content repo), unless you also set
 either of those individually. Full reference in [`CLAUDE.md`](CLAUDE.md#configuration-file).
 
+## URL parameters
+
+The main page can be pre-filled (and optionally launched) straight from its address, e.g. for a
+bookmark or a link from another tool:
+
+```
+http://localhost:8000/?playbook=lamp&role=docker-host&preset=ssh&host=10.0.0.5&user=admin&vars[apache][apache_listen_port]=8080&execute=1
+```
+
+| Parameter | Effect |
+|---|---|
+| `playbook` / `playbooks` | Apply playbook(s) — repeatable and/or comma-separated |
+| `role` / `roles` | Check role(s) — repeatable and/or comma-separated |
+| `preset` | `ssh`, `winrm`, `winrm-secure`, `psrp`, or `psrp-secure` |
+| `host`, `port`, `user` (or `username`), `password` | Fill the Host fields |
+| `vars[<role>][<name>]` | Set one role's variable |
+| `vars[<name>]` | Set a variable on every selected role that declares it |
+| `execute=1` | Click **Apply** automatically once everything is filled in |
+
+`execute=1` is dropped from the address bar as soon as it fires, so reloading the page doesn't
+start a second run. It refuses to fire (showing an error toast instead) if any playbook, role,
+or variable in the URL doesn't exist, or a required field is still empty. A `password` in the
+URL ends up in browser history and proxy logs — prefer the configured defaults for that.
+
 ## Development
 
 This repo was built and is documented for AI coding assistants — see [`CLAUDE.md`](CLAUDE.md)

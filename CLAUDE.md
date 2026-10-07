@@ -206,6 +206,25 @@ logs) is persisted so past runs can be reviewed later.
   comments; playbook rows use the same "outer `<div>`, two sibling `<button>`s" shape as the run
   tabs described below.
 
+### URL parameters
+
+`index.html`'s `applyUrlParams()` (run on `DOMContentLoaded`, since it calls `base.html`'s
+`showToast()`, defined in a later script) pre-fills the Deploy column from the page's own query
+string: `playbook(s)`/`role(s)` (repeatable and/or comma-separated), `preset` (matched against
+each port-preset `<option>`'s `data-preset`: `ssh`/`winrm`/`winrm-secure`/`psrp`/
+`psrp-secure`), `host`/`port`/`user`/`password` (also `username` and the `target_*` form names),
+`vars[<role>][<name>]` (one role) or `vars[<name>]` (every selected role declaring it, with a
+per-role value winning), and `execute=1` (calls `applyForm.requestSubmit()` once everything is
+filled in). It is purely client-side -- it drives the same controls a user would, so `POST /runs`
+and its validation are unchanged. Preset is applied first (it resets port/credentials to that
+preset's defaults); variables last (they only resolve against the roles now checked). Unknown
+playbooks/roles/presets/variables surface as one error toast, and also **block** `execute=1`,
+as does a form that fails `checkValidity()` -- an auto-run must never apply something other
+than what the link asked for. `execute` is stripped from the address bar via
+`history.replaceState()` before submitting, so a reload re-fills the form without launching a
+second run. The base.html trailing-slash redirect preserves `window.location.search`, so this
+works behind a path-stripping proxy too.
+
 ### Playbooks (role presets)
 
 - A **playbook** is a YAML file — written like a normal Ansible playbook (a list of plays, each
@@ -669,7 +688,7 @@ one column/table per override kind.
 
 | Method & path | Purpose |
 |---|---|
-| `GET /` | Main page: role checklist, apply form, recent run history |
+| `GET /` | Main page: role checklist, apply form, recent run history (query parameters pre-fill/auto-run the form client-side -- see "URL parameters") |
 | `GET /roles` | HTMX fragment — rescans the roles directory, re-renders the checklist |
 | `GET /roles/{name}/files` | HTMX fragment — Viewer tab file list for one role (`partials/file_browser.html`) |
 | `GET /roles/{name}/file` | HTMX fragment — one file's read-only content (`path` query param, `partials/file_content.html`) |
