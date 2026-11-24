@@ -23,11 +23,14 @@ from ansiblaster.settings import Settings, relevant_environment_variables
 from ansiblaster.settings_store import (
     HOST_FIELDS,
     HOST_PRESETS,
+    RunOptions,
     delete_host_override,
     delete_role_variable_override,
     get_host_overrides,
     get_role_variable_overrides,
+    get_run_options,
     parse_override_value,
+    save_run_options,
     set_host_override,
     set_role_variable_override,
 )
@@ -66,6 +69,7 @@ def _render_modal_body(request: Request, settings: Settings, session):
             # scope/masking. Recomputed on every render like everything else here, though
             # nothing in this module's own routes actually changes it.
             "environment_variables": relevant_environment_variables(),
+            "run_options": get_run_options(session),
         },
     )
 
@@ -146,4 +150,35 @@ async def save_host_settings(
                     delete_host_override(session, preset, field)
                 else:
                     set_host_override(session, preset, field, value)
+        return _render_modal_body(request, settings, session)
+
+
+@router.post("/run-options")
+async def save_run_options_route(
+    request: Request,
+    settings: Settings = Depends(get_app_settings),
+    session_factory=Depends(get_session_factory),
+):
+    """Save the whole Run Options form at once. Checkboxes submit nothing when unchecked, so
+    presence of the field *is* the value (the form always renders every checkbox)."""
+    form = await request.form()
+    timeout_raw = str(form.get("connection_timeout", "")).strip()
+    timeout: int | None = None
+    if timeout_raw:
+        try:
+            timeout = int(timeout_raw)
+        except ValueError:
+            timeout = 0
+        if timeout < 1:
+            raise HTTPException(
+                status_code=400, detail="Connection timeout must be a whole number of seconds."
+            )
+    options = RunOptions(
+        gather_facts="gather_facts" in form,
+        become="become" in form,
+        python_interpreter=str(form.get("python_interpreter", "")).strip() or None,
+        connection_timeout=timeout,
+    )
+    with session_scope(session_factory) as session:
+        save_run_options(session, options)
         return _render_modal_body(request, settings, session)

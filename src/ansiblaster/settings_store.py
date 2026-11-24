@@ -16,10 +16,13 @@ Two key namespaces share the one table:
     preset+field overrides (never merges with) the matching config.yaml default; leaving one
     unset just leaves it at the config.yaml value, same as config.yaml's own "no fallback
     between presets" precedent.
+  - "run_option:<name>" -> one of RunOptions' fields (gather_facts/become/python_interpreter/
+    connection_timeout), the Run Options tab. A missing row means the built-in default.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 import yaml
@@ -32,9 +35,57 @@ from ansiblaster.settings import DefaultsSettings
 
 _ROLE_VARIABLE_PREFIX = "role_variable:"
 _HOST_PREFIX = "host:"
+_RUN_OPTION_PREFIX = "run_option:"
 
 HOST_PRESETS = ("ssh", "winrm", "psrp")
 HOST_FIELDS = ("username", "password")
+
+
+@dataclass(frozen=True)
+class RunOptions:
+    """Global, per-process (not per-run) execution options, edited in the Settings popup's Run
+    Options tab -- for the occasional problematic node, deliberately kept out of the main UI.
+    The defaults here are what a fresh install behaves like."""
+
+    gather_facts: bool = True
+    # Linux only -- Windows targets never use become (see jobs.py's _build_playbook()).
+    become: bool = True
+    # Linux only; None = let Ansible auto-discover (ansible_python_interpreter unset).
+    python_interpreter: str | None = None
+    # Seconds; None = Ansible's own default.
+    connection_timeout: int | None = None
+
+
+def get_run_options(session: Session) -> RunOptions:
+    rows = session.execute(
+        select(Setting).where(Setting.key.startswith(_RUN_OPTION_PREFIX))
+    ).scalars()
+    saved = {row.key[len(_RUN_OPTION_PREFIX) :]: row.value for row in rows}
+    defaults = RunOptions()
+    return RunOptions(
+        gather_facts=bool(saved.get("gather_facts", defaults.gather_facts)),
+        become=bool(saved.get("become", defaults.become)),
+        python_interpreter=saved.get("python_interpreter") or None,
+        connection_timeout=saved.get("connection_timeout") or None,
+    )
+
+
+def save_run_options(session: Session, options: RunOptions) -> None:
+    """Persist every option at once. An option back at "no value" (None) has its row deleted
+    rather than saved as null, so it falls through to the built-in default."""
+    values = {
+        "gather_facts": options.gather_facts,
+        "become": options.become,
+        "python_interpreter": options.python_interpreter,
+        "connection_timeout": options.connection_timeout,
+    }
+    for name, value in values.items():
+        key = f"{_RUN_OPTION_PREFIX}{name}"
+        if value is None:
+            session.execute(sa_delete(Setting).where(Setting.key == key))
+        else:
+            session.merge(Setting(key=key, value=value))
+            session.flush()
 
 
 def parse_override_value(raw: str) -> Any:

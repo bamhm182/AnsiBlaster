@@ -347,3 +347,75 @@ def test_list_runs_shows_created_run(client, tmp_path, monkeypatch):
 
     assert response.status_code == 200
     assert "192.168.1.10" in response.text
+
+
+def test_run_stream_does_not_html_escape_lines(client, tmp_path, monkeypatch):
+    make_role(tmp_path, "docker-host")
+    line = 'fatal: [h]: FAILED! => {"msg": "a < b && c > d"}'
+    monkeypatch.setattr(
+        "ansiblaster.jobs.ansible_runner.run_async",
+        _fake_run_async([], stdout_lines=[line]),
+    )
+    client.post("/runs", data=_base_form(roles=["docker-host"]))
+    run = _only_run(client)
+
+    response = client.get(f"/runs/{run.id}/stream")
+
+    assert f"data: {line}" in response.text
+    assert "&quot;" not in response.text
+    assert "&lt;" not in response.text
+
+
+def _post_run_options(client, **form):
+    response = client.post("/settings/run-options", data=form)
+    assert response.status_code == 200
+
+
+def test_create_run_uses_default_run_options(client, tmp_path, monkeypatch):
+    make_role(tmp_path, "apache")
+    calls: list[dict] = []
+    monkeypatch.setattr("ansiblaster.jobs.ansible_runner.run_async", _fake_run_async(calls))
+
+    client.post("/runs", data=_base_form(roles=["apache"]))
+
+    [play] = calls[0]["playbook"]
+    assert play["gather_facts"] is True
+    assert play["become"] is True
+    host_vars = calls[0]["inventory"]["all"]["hosts"]["target"]
+    assert "ansible_python_interpreter" not in host_vars
+    assert "ansible_ssh_timeout" not in host_vars
+
+
+def test_create_run_applies_saved_run_options(client, tmp_path, monkeypatch):
+    make_role(tmp_path, "apache")
+    calls: list[dict] = []
+    monkeypatch.setattr("ansiblaster.jobs.ansible_runner.run_async", _fake_run_async(calls))
+    # gather_facts/become left out of the form == unchecked.
+    _post_run_options(client, python_interpreter="/usr/bin/python3", connection_timeout="60")
+
+    client.post("/runs", data=_base_form(roles=["apache"]))
+
+    [play] = calls[0]["playbook"]
+    assert play["gather_facts"] is False
+    assert "become" not in play
+    host_vars = calls[0]["inventory"]["all"]["hosts"]["target"]
+    assert host_vars["ansible_python_interpreter"] == "/usr/bin/python3"
+    assert host_vars["ansible_ssh_timeout"] == 60
+
+
+def test_run_stream_has_anti_buffering_headers_and_initial_flush(client, tmp_path, monkeypatch):
+    make_role(tmp_path, "docker-host")
+    monkeypatch.setattr(
+        "ansiblaster.jobs.ansible_runner.run_async",
+        _fake_run_async([], stdout_lines=["line one"]),
+    )
+    client.post("/runs", data=_base_form(roles=["docker-host"]))
+    run = _only_run(client)
+
+    response = client.get(f"/runs/{run.id}/stream")
+
+    assert response.headers["x-accel-buffering"] == "no"
+    assert "no-cache" in response.headers["cache-control"]
+    # Padded SSE comment comes first, before any real data.
+    assert response.text.startswith(": connected")
+    assert response.text.index(": connected") < response.text.index("data: line one")

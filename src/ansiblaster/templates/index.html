@@ -1,7 +1,15 @@
 {% extends "base.html" %}
 {% block content %}
 
-<div class="app-shell">
+<div class="app-shell" id="app-shell" data-mobile-view="roles">
+  <!-- Phone-width navigation (hidden on desktop, see style.css's max-width media query): the
+       three columns and the bottom panel become four full-screen views, one visible at a time. -->
+  <nav class="mobile-nav" id="mobile-nav" aria-label="Sections">
+    <button type="button" class="mobile-nav-tab" data-mobile-view="playbooks">Playbooks</button>
+    <button type="button" class="mobile-nav-tab active" data-mobile-view="roles">Roles</button>
+    <button type="button" class="mobile-nav-tab" data-mobile-view="deploy">Deploy</button>
+    <button type="button" class="mobile-nav-tab" data-mobile-view="output">Output</button>
+  </nav>
   <div class="workspace">
     <section class="panel panel-playbooks" aria-label="Playbooks">
       <div class="panel-header">
@@ -140,6 +148,11 @@
           </div>
         </div>
 
+        <!-- Status row + Apply + error: one wrapper so phone widths can relocate the whole thing
+             to a footer under every section (see moveDeployFooter()). display: contents on
+             desktop keeps the layout identical to these being direct children of the form.
+             Apply therefore carries form="apply-form" -- it may live outside the <form>. -->
+        <div class="deploy-footer" id="deploy-footer">
         <div class="form-error" id="apply-form-error" hidden></div>
 
         <div class="target-status" id="target-status">
@@ -153,7 +166,8 @@
           >&#8635;</button>
           <span id="port-status-dot" class="port-status-dot" aria-hidden="true"></span>
           <span id="port-status-text" class="port-status-text">Not checked yet.</span>
-          <button type="submit" class="apply-button" id="apply-button">Apply</button>
+          <button type="submit" form="apply-form" class="apply-button" id="apply-button">Apply</button>
+        </div>
         </div>
       </form>
     </section>
@@ -219,6 +233,7 @@
       </div>
     </div>
   </section>
+  <div class="mobile-footer-slot" id="mobile-footer-slot"></div>
 </div>
 
 <script>
@@ -252,6 +267,7 @@
     document.getElementById("target-port-input").value = values.port;
     document.getElementById("target-user-input").value = values.username;
     document.getElementById("target-password-input").value = values.password;
+    updateApplyState();
   }
 
   // ---------------------------------------------------------------------
@@ -364,7 +380,27 @@
   // string (like escapeHtml() + template-literal concatenation elsewhere in this file) because
   // a role name is going into both text content *and* a data-* attribute here -- escapeHtml()
   // only makes text content safe, not attribute values (it doesn't escape quote characters).
+  // Apply stays disabled until it could actually succeed: at least one role, plus a host and
+  // username. Looks elements up itself (rather than closing over consts defined further down)
+  // since syncSelectedRolesSummary() calls this during initial page setup.
+  function updateApplyState() {
+    const button = document.getElementById("apply-button");
+    if (!button || button.dataset.busy) return;
+    const hasRoles = document.querySelector('input[name="roles"]:checked') !== null;
+    const hasHost = document.getElementById("target-host-input").value.trim() !== "";
+    const hasUser = document.getElementById("target-user-input").value.trim() !== "";
+    button.disabled = !(hasRoles && hasHost && hasUser);
+    button.title = !hasRoles
+      ? "Select at least one role first."
+      : !hasHost
+        ? "Enter the target's IP address first."
+        : !hasUser
+          ? "Enter a username first."
+          : "";
+  }
+
   function syncSelectedRolesSummary() {
+    updateApplyState();
     const checked = Array.from(document.querySelectorAll('input[name="roles"]:checked'))
       .map((el) => el.value);
     const container = document.getElementById("selected-roles-summary");
@@ -622,6 +658,38 @@
   // ---------------------------------------------------------------------
   // Bottom panel: Log/History tabs + collapse toggle.
   // ---------------------------------------------------------------------
+  // Phone layout: the Status row + Apply button (#deploy-footer) live under *every* section,
+  // not just Deploy, so it's moved into #mobile-footer-slot (the bottom of .app-shell) at phone
+  // width and back into the Deploy form on desktop. Everything inside is addressed by id, so
+  // relocating it breaks nothing.
+  function moveDeployFooter(isPhone) {
+    const footer = document.getElementById("deploy-footer");
+    const target = isPhone
+      ? document.getElementById("mobile-footer-slot")
+      : document.getElementById("apply-form");
+    if (footer.parentElement !== target) target.appendChild(footer);
+  }
+  const phoneQuery = window.matchMedia("(max-width: 800px)");
+  moveDeployFooter(phoneQuery.matches);
+  phoneQuery.addEventListener("change", (evt) => moveDeployFooter(evt.matches));
+
+  // Phone layout: one of playbooks/roles/deploy/output is shown at a time (CSS keys off
+  // #app-shell's data-mobile-view; the attribute is inert on desktop widths).
+  function showMobileView(name) {
+    document.getElementById("app-shell").dataset.mobileView = name;
+    if (name === "output") {
+      delete document.querySelector('.mobile-nav-tab[data-mobile-view="output"]').dataset.badge;
+    }
+    document.querySelectorAll(".mobile-nav-tab").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.mobileView === name);
+    });
+  }
+
+  document.getElementById("mobile-nav").addEventListener("click", (evt) => {
+    const tab = evt.target.closest(".mobile-nav-tab");
+    if (tab) showMobileView(tab.dataset.mobileView);
+  });
+
   function switchBottomTab(name) {
     document.querySelectorAll(".bottom-tab").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.bottomTab === name);
@@ -660,6 +728,7 @@
   // the files-list call be awaited before selectDefaultViewerFile() looks for buttons in it.
   // ---------------------------------------------------------------------
   async function openViewer(kind, name) {
+    showMobileView("output");
     switchBottomTab("viewer");
     document.getElementById("viewer-file-content").innerHTML =
       '<p class="empty-hint">Select a file on the left to view its contents.</p>';
@@ -698,15 +767,26 @@
     activeEventSources[runId] = source;
 
     source.addEventListener("message", (evt) => {
-      const pre = document.querySelector(`.run-tab-content[data-run-id="${runId}"] .run-log`);
-      if (pre) pre.textContent += evt.data + "\n";
+      const content = document.querySelector(`.run-tab-content[data-run-id="${runId}"]`);
+      const pre = content && content.querySelector(".run-log");
+      if (!pre) return;
+      // Follow the output only if the user is already at (or near) the bottom, so scrolling
+      // up to read earlier lines isn't yanked back down by every new one.
+      const atBottom = content.scrollHeight - content.scrollTop - content.clientHeight < 40;
+      pre.textContent += evt.data + "\n";
+      if (atBottom) content.scrollTop = content.scrollHeight;
     });
 
     source.addEventListener("done", async () => {
       closeRunStream(runId);
       try {
         const response = await fetch(`runs/${runId}`);
-        if (response.ok) openRunTab(await response.text());
+        if (response.ok) {
+          // focus:false -- refresh this run's tab in place, without yanking the user away from
+          // whatever they're currently looking at.
+          const result = openRunTab(await response.text(), { focus: false });
+          if (result) notifyRunFinished(result.host, result.status);
+        }
       } catch (err) {
         // Best-effort refresh for the final status/rc -- the log itself is already fully
         // populated from the stream regardless.
@@ -737,7 +817,7 @@
   // content is inserted via raw innerHTML, which htmx does not auto-process the way it does
   // its own swaps.
   // ---------------------------------------------------------------------
-  function openRunTab(html) {
+  function openRunTab(html, { focus = true } = {}) {
     const parsed = document.createElement("div");
     parsed.innerHTML = html;
     const detail = parsed.querySelector(".run-detail[data-run-id]");
@@ -751,8 +831,25 @@
       content.dataset.runId = runId;
       document.getElementById("run-tab-contents").appendChild(content);
     }
-    content.innerHTML = "";
-    content.appendChild(detail);
+    if (!focus) {
+      // In-place refresh of an existing tab (a run just finished): keep the live <pre> node
+      // the stream has been filling, so its scroll position and contents survive, instead of
+      // swapping in the server's copy and snapping the pane back to the top. Follow the end
+      // only if the user was already there.
+      const oldPre = content.querySelector(".run-log");
+      const newPre = detail.querySelector(".run-log");
+      if (oldPre && newPre) {
+        const atBottom = content.scrollHeight - content.scrollTop - content.clientHeight < 40;
+        newPre.replaceWith(oldPre);
+        content.replaceChildren(detail);
+        if (atBottom) content.scrollTop = content.scrollHeight;
+      } else {
+        content.replaceChildren(detail);
+      }
+    } else {
+      content.innerHTML = "";
+      content.appendChild(detail);
+    }
     htmx.process(content);
 
     if (detail.dataset.active === "true") {
@@ -779,8 +876,31 @@
       '<button type="button" class="run-tab-close" aria-label="Close run tab">&times;</button>';
 
     document.getElementById("no-runs-hint")?.remove();
-    activateRunTab(runId);
-    switchBottomTab("log");
+    if (focus) {
+      activateRunTab(runId);
+      switchBottomTab("log");
+    }
+    return { host: detail.dataset.targetHost, status: detail.dataset.status };
+  }
+
+  // A run finishing is worth a heads-up wherever the user happens to be: a toast, plus (on
+  // phone widths, where only one section is visible at a time) a colored dot on the Output tab
+  // until they go look.
+  function notifyRunFinished(host, status) {
+    if (status === "successful") {
+      showToast(`Run on ${host} finished successfully.`);
+    } else if (status === "failed" || status === "error") {
+      showToast(`Run on ${host} ${status === "failed" ? "failed" : "hit an error"}.`, "error");
+    } else {
+      return;
+    }
+    const shell = document.getElementById("app-shell");
+    if (shell.dataset.mobileView !== "output") {
+      const tab = document.querySelector('.mobile-nav-tab[data-mobile-view="output"]');
+      // A failure badge is never downgraded to a success one by a later run.
+      if (status !== "successful") tab.dataset.badge = "fail";
+      else if (!tab.dataset.badge) tab.dataset.badge = "ok";
+    }
   }
 
   // Delegated (not per-button) since openRunTab() replaces each tab's innerHTML wholesale on
@@ -919,6 +1039,7 @@
 
   applyForm.addEventListener("submit", async (evt) => {
     evt.preventDefault();
+    applyButton.dataset.busy = "1";
     applyButton.disabled = true;
     applyFormError.hidden = true;
     try {
@@ -930,21 +1051,30 @@
         return;
       }
       openRunTab(text);
+      showMobileView("output");
+      switchBottomTab("log");
       refreshHistory();
     } catch (err) {
       applyFormError.textContent = "Request failed: " + err;
       applyFormError.hidden = false;
     } finally {
-      applyButton.disabled = false;
+      delete applyButton.dataset.busy;
+      updateApplyState();
     }
   });
+  applyForm.addEventListener("input", updateApplyState);
+  updateApplyState();
 
   document.getElementById("run-list").addEventListener("click", async (evt) => {
     const link = evt.target.closest(".run-row-link");
     if (!link) return;
     const response = await fetch(`runs/${link.dataset.runId}`);
     const text = await response.text();
-    if (response.ok) openRunTab(text);
+    if (response.ok) {
+      openRunTab(text);
+      showMobileView("output");
+      switchBottomTab("log");
+    }
   });
 
   // Keeps the History tab's list in sync with newly-created and newly-finished runs without

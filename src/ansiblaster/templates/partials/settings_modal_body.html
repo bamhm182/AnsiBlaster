@@ -8,6 +8,7 @@
 <div class="settings-tabs">
   <button type="button" class="settings-tab active" data-settings-tab="role-variables">Role Variables</button>
   <button type="button" class="settings-tab" data-settings-tab="host-variables">Host Variables</button>
+  <button type="button" class="settings-tab" data-settings-tab="run-options">Run Options</button>
   <button type="button" class="settings-tab" data-settings-tab="environment">Environment</button>
 </div>
 
@@ -127,6 +128,58 @@
         </fieldset>
       {% endfor %}
       <button type="submit" class="apply-button">Save Host Settings</button>
+    </form>
+  </section>
+</div>
+
+<!-- Run Options: global execution knobs for a problematic node, deliberately kept out of the
+     main UI. Saved all at once; checkboxes submit nothing when unchecked (the route treats
+     presence as true). Applied server-side to every run from here on -- no per-run form field. -->
+<div class="settings-tab-content" data-settings-content="run-options" hidden>
+  <section class="settings-section">
+    <h3>Run Options</h3>
+    <p class="settings-hint">
+      Apply to every run, until changed. Useful for nodes that need special handling.
+    </p>
+    <form class="settings-host-form" hx-post="settings/run-options" hx-target="#settings-modal-body" hx-swap="innerHTML">
+      <fieldset class="deploy-vars-role settings-host-preset">
+        <legend>Execution</legend>
+        <label class="settings-checkbox-row" title="Disable Fact Gathering for a problematic node">
+          <input type="checkbox" name="gather_facts" {{ 'checked' if run_options.gather_facts }}>
+          Gather Facts
+        </label>
+        <label class="settings-checkbox-row" title="Linux only. Turn off if you log in as root, or the account can't sudo.">
+          <input type="checkbox" name="become" {{ 'checked' if run_options.become }}>
+          Become (sudo) on Linux
+        </label>
+      </fieldset>
+      <fieldset class="deploy-vars-role settings-host-preset">
+        <legend>Connection</legend>
+        <div class="settings-var-row">
+          <span class="settings-var-name">Python interpreter</span>
+          <input
+            type="text"
+            name="python_interpreter"
+            class="settings-var-value"
+            value="{{ run_options.python_interpreter or '' }}"
+            placeholder="auto (e.g. /usr/bin/python3)"
+            aria-label="Python interpreter path (Linux only)"
+          >
+        </div>
+        <div class="settings-var-row">
+          <span class="settings-var-name">Timeout (s)</span>
+          <input
+            type="number"
+            min="1"
+            name="connection_timeout"
+            class="settings-var-value"
+            value="{{ run_options.connection_timeout or '' }}"
+            placeholder="Ansible default"
+            aria-label="Connection timeout in seconds"
+          >
+        </div>
+      </fieldset>
+      <button type="submit" class="apply-button">Save Run Options</button>
     </form>
   </section>
 </div>

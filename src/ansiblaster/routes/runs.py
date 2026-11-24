@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import html
+import asyncio
 import re
 from collections.abc import AsyncIterator
 from typing import Any
@@ -18,6 +18,10 @@ from ansiblaster.jobs import STREAM_DONE, JobManager, stdout_log_path
 from ansiblaster.models import Run, TargetOS
 from ansiblaster.role_vars import discover_role_variables
 from ansiblaster.settings import Settings
+from ansiblaster.settings_store import get_run_options
+
+_SSE_PADDING_BYTES = 4096
+_SSE_KEEPALIVE_SECONDS = 15
 
 router = APIRouter(prefix="/runs")
 
@@ -153,6 +157,10 @@ async def create_run(
     except _VariableError as exc:
         return PlainTextResponse(str(exc), status_code=400)
 
+    # Global run options (Settings popup > Run Options) -- not a per-run form field.
+    with session_scope(session_factory) as session:
+        options = get_run_options(session)
+
     try:
         run = job_manager.start_job(
             target_os=target_os,
@@ -162,6 +170,10 @@ async def create_run(
             target_password=target_password,
             roles=roles,
             variables=variables,
+            gather_facts=options.gather_facts,
+            become=options.become,
+            python_interpreter=options.python_interpreter,
+            connection_timeout=options.connection_timeout,
         )
     except ValueError as exc:
         return PlainTextResponse(str(exc), status_code=400)
@@ -210,17 +222,38 @@ async def run_stream(job_id: str, job_manager: JobManager = Depends(get_job_mana
         )
 
     async def event_generator() -> AsyncIterator[str]:
+        # An immediate first chunk, padded past the ~4KB many reverse proxies (nginx, Coder's
+        # app proxy, ...) buffer before forwarding anything -- an SSE comment (": ...") the
+        # browser ignores. Without it, a buffering proxy can hold every early line back until
+        # the stream ends, which looks exactly like "no output until the run is finished".
+        yield ": connected" + " " * _SSE_PADDING_BYTES + "\n\n"
         while True:
-            item = await job.queue.get()
+            try:
+                item = await asyncio.wait_for(job.queue.get(), timeout=_SSE_KEEPALIVE_SECONDS)
+            except TimeoutError:
+                # Ansible only prints when a task finishes, so a long task is silent for a
+                # long time -- a periodic comment keeps proxies/idle timeouts from closing
+                # (or buffering) a connection that's merely quiet. (Cancelling Queue.get() on
+                # timeout doesn't lose an item.)
+                yield ": keepalive\n\n"
+                continue
             if item is STREAM_DONE:
-                # No payload needed: run_detail.html's container listens for this event via
-                # hx-trigger="sse:done" and just re-fetches the whole fragment, which reflects
-                # whatever final status/rc/log jobs.py has since written to the DB/log file.
+                # No payload needed: the client's "done" listener just re-fetches the whole
+                # run fragment, which reflects whatever final status/rc/log jobs.py has since
+                # written to the DB/log file.
                 yield "event: done\ndata: \n\n"
                 break
             yield _format_sse_event(item)
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            # nginx-style proxies: don't buffer this response.
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/{job_id}/cancel")
@@ -257,10 +290,10 @@ def _format_sse_event(data: str) -> str:
     """Format one ansible-runner stdout chunk as an SSE 'message' event.
 
     Each line becomes its own `data:` line per the SSE spec (a single data field can't
-    contain a literal newline). Lines are HTML-escaped because htmx's sse extension swaps
-    event data in as raw HTML (hx-swap="beforeend" on the log <pre>) -- escaping keeps
-    arbitrary task/module output from being interpreted as markup.
+    contain a literal newline). Deliberately NOT HTML-escaped: the client appends event data
+    to the log <pre> via textContent (index.html's connectRunStream()), which never
+    interprets markup, so escaping here would show up literally as &lt;/&quot;/&amp;.
     """
     lines = data.splitlines() or [""]
-    body = "\n".join(f"data: {html.escape(line)}" for line in lines)
+    body = "\n".join(f"data: {line}" for line in lines)
     return f"{body}\n\n"

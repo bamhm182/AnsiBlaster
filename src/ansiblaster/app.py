@@ -34,9 +34,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
 
 
+class _RevalidatingStaticFiles(StaticFiles):
+    """StaticFiles that makes browsers revalidate on every load.
+
+    Starlette sends only ETag/Last-Modified, so browsers apply *heuristic* freshness and may
+    keep serving an old style.css/script for a while after an upgrade -- a stale stylesheet
+    against a newer page renders broken or missing UI. "no-cache" still lets the browser reuse
+    its copy, but only after a cheap conditional request (304) confirms it's current.
+    """
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="AnsiBlaster", lifespan=lifespan)
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+    app.mount("/static", _RevalidatingStaticFiles(directory=str(STATIC_DIR)), name="static")
     app.include_router(router)
     return app
 

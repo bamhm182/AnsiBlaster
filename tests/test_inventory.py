@@ -211,3 +211,36 @@ def test_build_inventory_windows_psrp_ignores_cert_validation():
     )
 
     assert inventory["all"]["hosts"][HOST_ALIAS]["ansible_psrp_cert_validation"] == "ignore"
+
+
+def test_linux_inventory_python_interpreter_and_timeout():
+    inv = build_inventory(
+        target_os=TargetOS.LINUX,
+        target_host="10.0.0.5",
+        target_port=22,
+        target_user="root",
+        target_password="x",
+        python_interpreter="/usr/bin/python3",
+        connection_timeout=60,
+    )
+    host = inv["all"]["hosts"]["target"]
+    assert host["ansible_python_interpreter"] == "/usr/bin/python3"
+    assert host["ansible_ssh_timeout"] == 60
+
+
+def test_windows_inventory_timeout_uses_connection_specific_var_and_ignores_python():
+    for target_os, var in (
+        (TargetOS.WINDOWS, "ansible_winrm_connection_timeout"),
+        (TargetOS.WINDOWS_PSRP, "ansible_psrp_connection_timeout"),
+    ):
+        host = build_inventory(
+            target_os=target_os,
+            target_host="10.0.0.5",
+            target_port=5985,
+            target_user="Administrator",
+            target_password="x",
+            python_interpreter="/usr/bin/python3",
+            connection_timeout=90,
+        )["all"]["hosts"]["target"]
+        assert host[var] == 90
+        assert "ansible_python_interpreter" not in host

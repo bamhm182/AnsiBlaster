@@ -70,8 +70,14 @@ def build_inventory(
     target_port: int,
     target_user: str,
     target_password: str,
+    python_interpreter: str | None = None,
+    connection_timeout: int | None = None,
 ) -> dict[str, Any]:
-    """Build the single-host Ansible inventory dict for one run."""
+    """Build the single-host Ansible inventory dict for one run.
+
+    python_interpreter applies to Linux targets only (Windows has no such concept);
+    connection_timeout (seconds) maps to each connection plugin's own timeout variable.
+    """
     if target_os is TargetOS.LINUX:
         host_vars = _linux_host_vars(target_host, target_port, target_user, target_password)
     elif target_os is TargetOS.WINDOWS:
@@ -80,6 +86,16 @@ def build_inventory(
         host_vars = _windows_psrp_host_vars(target_host, target_port, target_user, target_password)
     else:  # pragma: no cover - defensive, TargetOS is a closed enum
         raise ValueError(f"Unsupported target OS: {target_os!r}")
+
+    if connection_timeout is not None:
+        timeout_var = {
+            TargetOS.LINUX: "ansible_ssh_timeout",
+            TargetOS.WINDOWS: "ansible_winrm_connection_timeout",
+            TargetOS.WINDOWS_PSRP: "ansible_psrp_connection_timeout",
+        }[target_os]
+        host_vars[timeout_var] = connection_timeout
+    if python_interpreter and target_os is TargetOS.LINUX:
+        host_vars["ansible_python_interpreter"] = python_interpreter
 
     return {"all": {"hosts": {HOST_ALIAS: host_vars}}}
 

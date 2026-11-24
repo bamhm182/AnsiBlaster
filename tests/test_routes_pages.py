@@ -66,3 +66,10 @@ def test_index_embeds_os_defaults_as_raw_js_not_html_escaped(make_client):
     assert '"deploy"' in response.text
     assert "&#34;deploy&#34;" not in response.text
     assert "&#34;" not in response.text.split("<script>", 1)[1]
+
+
+def test_static_files_must_be_revalidated(client):
+    response = client.get("/static/style.css")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-cache"

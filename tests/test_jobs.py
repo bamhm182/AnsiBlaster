@@ -369,3 +369,88 @@ def test_get_job_returns_none_for_unknown_job(tmp_path):
     manager, _ = _make_job_manager(tmp_path)
 
     assert manager.get_job("does-not-exist") is None
+
+
+async def test_start_job_gather_facts_defaults_to_true(tmp_path, monkeypatch):
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        "ansiblaster.jobs.ansible_runner.run_async", _fake_run_async_recorder(calls)
+    )
+    manager, _ = _make_job_manager(tmp_path)
+
+    manager.start_job(
+        target_os=TargetOS.LINUX,
+        target_host="10.0.0.5",
+        target_port=22,
+        target_user="root",
+        target_password="hunter2",
+        roles=["apache"],
+    )
+
+    [play] = calls[0]["playbook"]
+    assert play["gather_facts"] is True
+
+
+async def test_start_job_gather_facts_false_is_set_on_play(tmp_path, monkeypatch):
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        "ansiblaster.jobs.ansible_runner.run_async", _fake_run_async_recorder(calls)
+    )
+    manager, _ = _make_job_manager(tmp_path)
+
+    manager.start_job(
+        target_os=TargetOS.LINUX,
+        target_host="10.0.0.5",
+        target_port=22,
+        target_user="root",
+        target_password="hunter2",
+        roles=["apache"],
+        gather_facts=False,
+    )
+
+    [play] = calls[0]["playbook"]
+    assert play["gather_facts"] is False
+
+
+async def test_start_job_streams_blank_stdout_lines(tmp_path, monkeypatch):
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        "ansiblaster.jobs.ansible_runner.run_async",
+        _fake_run_async_recorder(calls, stdout_lines=["PLAY [all]", "", "TASK [x]"]),
+    )
+    manager, _ = _make_job_manager(tmp_path)
+
+    run = manager.start_job(
+        target_os=TargetOS.LINUX,
+        target_host="192.168.1.10",
+        target_port=22,
+        target_user="root",
+        target_password="hunter2",
+        roles=["docker-host"],
+    )
+
+    job = manager.get_job(run.id)
+    lines = [await asyncio.wait_for(job.queue.get(), timeout=1) for _ in range(4)]
+
+    assert lines == ["PLAY [all]", "", "TASK [x]", STREAM_DONE]
+
+
+async def test_start_job_become_false_omits_become_on_linux(tmp_path, monkeypatch):
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        "ansiblaster.jobs.ansible_runner.run_async", _fake_run_async_recorder(calls)
+    )
+    manager, _ = _make_job_manager(tmp_path)
+
+    manager.start_job(
+        target_os=TargetOS.LINUX,
+        target_host="10.0.0.5",
+        target_port=22,
+        target_user="root",
+        target_password="hunter2",
+        roles=["apache"],
+        become=False,
+    )
+
+    [play] = calls[0]["playbook"]
+    assert "become" not in play

@@ -86,6 +86,10 @@ class JobManager:
         target_password: str,
         roles: list[str],
         variables: dict[str, dict[str, Any]] | None = None,
+        gather_facts: bool = True,
+        become: bool = True,
+        python_interpreter: str | None = None,
+        connection_timeout: int | None = None,
     ) -> Run:
         """Create the Run row and launch its ansible-runner job. Returns the new Run.
 
@@ -125,8 +129,10 @@ class JobManager:
         cancel_event = threading.Event()
 
         def _event_handler(event_data: dict) -> bool:
+            # "" is a real blank line in Ansible's output (between tasks/plays) -- only skip
+            # events that carry no stdout at all.
             line = event_data.get("stdout")
-            if line:
+            if line is not None:
                 loop.call_soon_threadsafe(queue.put_nowait, line)
             return True
 
@@ -143,13 +149,15 @@ class JobManager:
             thread, runner = ansible_runner.run_async(
                 private_data_dir=private_data_dir,
                 ident=job_id,
-                playbook=_build_playbook(roles, target_os, variables),
+                playbook=_build_playbook(roles, target_os, variables, gather_facts, become),
                 inventory=build_inventory(
                     target_os=target_os,
                     target_host=target_host,
                     target_port=target_port,
                     target_user=target_user,
                     target_password=target_password,
+                    python_interpreter=python_interpreter,
+                    connection_timeout=connection_timeout,
                 ),
                 roles_path=[self._roles_path],
                 quiet=True,
@@ -229,7 +237,11 @@ def stdout_log_path(run: Run) -> Path:
 
 
 def _build_playbook(
-    roles: list[str], target_os: TargetOS, variables: dict[str, dict[str, Any]]
+    roles: list[str],
+    target_os: TargetOS,
+    variables: dict[str, dict[str, Any]],
+    gather_facts: bool = True,
+    become: bool = True,
 ) -> list[dict[str, Any]]:
     """The ephemeral playbook applying the selected roles to the single generated host.
 
@@ -248,7 +260,7 @@ def _build_playbook(
     role_entries: list[Any] = [
         {"role": role, "vars": variables[role]} if variables.get(role) else role for role in roles
     ]
-    play: dict[str, Any] = {"hosts": "all", "roles": role_entries}
-    if target_os is TargetOS.LINUX:
+    play: dict[str, Any] = {"hosts": "all", "gather_facts": gather_facts, "roles": role_entries}
+    if target_os is TargetOS.LINUX and become:
         play["become"] = True
     return [play]

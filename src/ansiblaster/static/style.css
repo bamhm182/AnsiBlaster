@@ -124,14 +124,123 @@ main {
   background: var(--bg-inset);
 }
 
+.mobile-nav,
+.mobile-footer-slot {
+  display: none;
+}
+.deploy-footer {
+  display: contents;
+}
+/* Dot on the Output tab: a run finished (green) / failed (red) while you were elsewhere. */
+.mobile-nav-tab[data-badge]::after {
+  content: "";
+  display: inline-block;
+  width: 0.45rem;
+  height: 0.45rem;
+  margin-left: 0.35rem;
+  border-radius: 50%;
+  vertical-align: middle;
+  background: var(--green);
+}
+.mobile-nav-tab[data-badge="fail"]::after {
+  background: var(--red);
+}
+
+/* Phone layout: instead of stacking three columns and a bottom panel, show ONE section at a
+   time, switched by a tab bar (.mobile-nav, driven by index.html's showMobileView()). Playbooks/
+   Roles/Deploy each fill the screen; "Output" shows the bottom panel (Log/History/Viewer) full
+   height. The drag resizers and collapse toggle are meaningless here and hidden. */
 @media (max-width: 800px) {
-  .workspace {
-    grid-auto-flow: row;
-    grid-template-columns: 1fr;
-    overflow-y: auto;
+  .mobile-nav {
+    flex: 0 0 auto;
+    display: flex;
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--bg-inset);
   }
-  .panel {
-    min-height: 16rem;
+  .mobile-nav-tab {
+    flex: 1;
+    min-height: 2.75rem;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--fg-muted);
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+  }
+  .mobile-nav-tab.active {
+    color: var(--fg);
+    border-bottom-color: var(--accent);
+  }
+
+  /* Status + Apply, relocated here by index.html's moveDeployFooter(), under every section. */
+  .mobile-footer-slot {
+    flex: 0 0 auto;
+    display: block;
+    background: var(--bg-sidebar);
+    border-top: 1px solid var(--bg-inset);
+  }
+  .mobile-footer-slot .deploy-footer {
+    display: block;
+  }
+
+  .workspace {
+    display: flex;
+    flex-direction: column;
+  }
+  .workspace .panel {
+    display: none;
+    flex: 1;
+    min-height: 0;
+  }
+  .app-shell[data-mobile-view="playbooks"] .panel-playbooks,
+  .app-shell[data-mobile-view="roles"] .panel-roles,
+  .app-shell[data-mobile-view="deploy"] .panel-deploy {
+    display: flex;
+  }
+
+  .app-shell[data-mobile-view="output"] .workspace,
+  .app-shell:not([data-mobile-view="output"]) .bottom-panel,
+  .panel-resizer,
+  .deploy-resizer,
+  .collapse-toggle {
+    display: none;
+  }
+  .app-shell[data-mobile-view="output"] .bottom-panel {
+    flex: 1;
+    min-height: 0;
+    border-top: none;
+  }
+  .bottom-panel .bottom-panel-body {
+    flex: 1;
+    height: auto;
+    min-height: 0;
+  }
+  .bottom-tabs {
+    flex: 1;
+  }
+  .bottom-tab {
+    flex: 1;
+    min-height: 2.5rem;
+  }
+
+  /* Roomier touch targets, and 16px inputs so iOS doesn't zoom the page on focus. */
+  .deploy-target input,
+  .deploy-target select {
+    font-size: 16px;
+    min-height: 2.4rem;
+  }
+  .deploy-target .checkbox-row input[type="checkbox"] {
+    min-height: 0;
+    width: 1.2rem;
+    height: 1.2rem;
+  }
+  .apply-button {
+    min-height: 2.6rem;
+    padding-left: 1.4rem;
+    padding-right: 1.4rem;
   }
 }
 
@@ -496,6 +605,19 @@ body.is-resizing-deploy .deploy-resizer {
   flex: 1;
 }
 
+.deploy-target .checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0;
+  cursor: pointer;
+}
+.deploy-target .checkbox-row input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 .deploy-target input,
 .deploy-target select,
 .deploy-var-row input:not([type="checkbox"]) {
@@ -756,6 +878,17 @@ body.is-resizing {
   overflow-y: auto;
   border-right: 1px solid var(--bg-inset);
   padding: 0.25rem 0;
+}
+@media (max-width: 800px) {
+  /* Not enough width for side-by-side: file list on top, content below. */
+  .viewer-layout {
+    flex-direction: column;
+  }
+  .viewer-file-list {
+    flex: 0 0 8rem;
+    border-right: none;
+    border-bottom: 1px solid var(--bg-inset);
+  }
 }
 .viewer-file-content {
   flex: 1;
@@ -1320,4 +1453,28 @@ body.is-resizing {
 }
 .toast.toast-error {
   border-left-color: var(--red);
+}
+
+/* Run Options tab: checkbox + label on one line, same compact row rhythm as .settings-var-row. */
+.settings-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.settings-checkbox-row input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+/* No hover on touch devices / phone layout: the hover-revealed icon buttons (viewer eyeball,
+   Variables "Save as Default") would be unreachable, so keep them always visible. */
+@media (max-width: 800px), (hover: none) {
+  .eyeball-button,
+  .save-default-button {
+    visibility: visible;
+  }
 }

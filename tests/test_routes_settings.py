@@ -216,3 +216,40 @@ def test_role_variable_list_is_in_its_own_scroll_wrapper_outside_the_save_button
     save_button_index = response.text.index(">Save Role Variables<")
     add_new_index = response.text.index('class="settings-var-row settings-var-row-new"')
     assert scroll_start < save_button_index < add_new_index
+
+
+def test_settings_modal_has_run_options_tab_with_defaults(client):
+    text = client.get("/settings").text
+    assert 'data-settings-tab="run-options"' in text
+    assert re.search(r'name="gather_facts"\s+checked', text)
+    assert re.search(r'name="become"\s+checked', text)
+
+
+def test_save_run_options_round_trips(client):
+    response = client.post(
+        "/settings/run-options",
+        data={"python_interpreter": "/usr/bin/python3", "connection_timeout": "45"},
+    )
+    assert response.status_code == 200
+    text = client.get("/settings").text
+    assert not re.search(r'name="gather_facts"\s+checked', text)
+    assert not re.search(r'name="become"\s+checked', text)
+    assert _input_value(text, "python_interpreter") == "/usr/bin/python3"
+    assert _input_value(text, "connection_timeout") == "45"
+
+
+def test_save_run_options_blank_values_clear_back_to_defaults(client):
+    client.post(
+        "/settings/run-options", data={"python_interpreter": "/x", "connection_timeout": "5"}
+    )
+    client.post("/settings/run-options", data={"gather_facts": "on", "become": "on"})
+    text = client.get("/settings").text
+    assert re.search(r'name="gather_facts"\s+checked', text)
+    assert _input_value(text, "python_interpreter") == ""
+    assert _input_value(text, "connection_timeout") == ""
+
+
+def test_save_run_options_rejects_bad_timeout(client):
+    for bad in ("abc", "0", "-5"):
+        response = client.post("/settings/run-options", data={"connection_timeout": bad})
+        assert response.status_code == 400

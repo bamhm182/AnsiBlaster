@@ -1,0 +1,37 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start dev server",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/dev-server.sh",
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": {
+        "owner": "ansiblaster",
+        "pattern": { "regexp": "^$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^AnsiBlaster dev server",
+          "endsPattern": "Application startup complete"
+        }
+      }
+    },
+    {
+      "label": "Start dev server (auto-reload)",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/dev-server.sh --reload",
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": {
+        "owner": "ansiblaster",
+        "pattern": { "regexp": "^$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^AnsiBlaster dev server",
+          "endsPattern": "Application startup complete"
+        }
+      }
+    }
+  ]
+}

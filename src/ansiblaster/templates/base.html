@@ -185,6 +185,7 @@
     function settingsSuccessMessage(path) {
       if (path === "settings/role-variables/bulk") return "Role variables saved.";
       if (path === "settings/host") return "Host settings saved.";
+      if (path === "settings/run-options") return "Run options saved.";
       if (path === "settings/role-variables") return "Variable override saved.";
       if (path?.startsWith("settings/role-variables/")) return "Variable override removed.";
       return "Saved.";
