@@ -37,6 +37,17 @@
 <body>
   <header>
     <h1>AnsiBlaster</h1>
+    <div class="header-actions">
+    <!-- Copies a link that re-creates the current Deploy configuration (see index.html's
+         copyDeploymentLink()); the password is never included. -->
+    <button
+      type="button"
+      class="icon-button settings-cog-button"
+      id="copy-link-button"
+      title="Copy a link to this deployment (without the password)"
+      aria-label="Copy deployment link"
+      onclick="copyDeploymentLink()"
+    >{% include "partials/link_icon.html" %}</button>
     <button
       type="button"
       class="icon-button settings-cog-button"
@@ -48,6 +59,7 @@
       hx-swap="innerHTML"
       onclick="openSettingsModal()"
     >{% include "partials/settings_icon.html" %}</button>
+    </div>
   </header>
   <main>
     {% block content %}{% endblock %}

@@ -95,6 +95,12 @@ header h1::before {
   color: var(--accent);
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
 .settings-cog-button {
   font-size: 1.05rem;
 }

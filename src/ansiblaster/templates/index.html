@@ -109,11 +109,13 @@
                     aria-label="Port preset"
                     onchange="applyPortPreset(this)"
                   >
-                    <option value="{{ default_ports['linux'] }}" data-os="linux" selected>SSH</option>
-                    <option value="{{ default_ports['windows'] }}" data-os="windows">WinRM</option>
-                    <option value="{{ windows_https_port }}" data-os="windows">WinRM (Secure)</option>
-                    <option value="{{ default_ports['windows_psrp'] }}" data-os="windows_psrp">PSRP</option>
-                    <option value="{{ windows_https_port }}" data-os="windows_psrp">PSRP (Secure)</option>
+                    <!-- data-preset is the name a ?preset= URL parameter selects it by (see
+                         applyUrlParams() below). -->
+                    <option value="{{ default_ports['linux'] }}" data-os="linux" data-preset="ssh" selected>SSH</option>
+                    <option value="{{ default_ports['windows'] }}" data-os="windows" data-preset="winrm">WinRM</option>
+                    <option value="{{ windows_https_port }}" data-os="windows" data-preset="winrm-secure">WinRM (Secure)</option>
+                    <option value="{{ default_ports['windows_psrp'] }}" data-os="windows_psrp" data-preset="psrp">PSRP</option>
+                    <option value="{{ windows_https_port }}" data-os="windows_psrp" data-preset="psrp-secure">PSRP (Secure)</option>
                   </select>
                   <input type="number" name="target_port" id="target-port-input"
                          value="{{ default_ports['linux'] }}" required>
@@ -1160,6 +1162,201 @@
 
   syncSelectedRolesSummary();
   syncRoleVariables();
+
+  // ---------------------------------------------------------------------
+  // URL query parameters: pre-fill the Deploy column (and optionally auto-submit it) from the
+  // page's own address, so a run can be bookmarked/linked/scripted, e.g.
+  //   ?playbook=lamp&role=extra&vars[mysql][mysql_port]=3307&host=10.0.0.5&execute=1
+  // Supported parameters (all optional, see CLAUDE.md's "URL parameters" section):
+  //   playbook / playbooks   playbook name(s) to apply -- repeatable and/or comma-separated
+  //   role / roles           role name(s) to check -- same
+  //   preset                 ssh | winrm | winrm-secure | psrp | psrp-secure
+  //   host, port, user (or username), password -- the Host fieldset's fields
+  //   vars[<role>][<name>]   a variable for one role
+  //   vars[<name>]           a variable for every selected role that declares <name>
+  //   execute=1              launch the run (done server-side, see routes/pages.py)
+  //   run=<id>               open that run's tab (set by the server after an execute redirect)
+  // The pre-fill itself is client-side -- it drives the same controls a user would. Runs on DOMContentLoaded rather than inline, since
+  // showToast() lives in base.html's script, which comes after this one in the document.
+  // ---------------------------------------------------------------------
+  function urlParamList(params, ...keys) {
+    return keys
+      .flatMap((key) => params.getAll(key))
+      .flatMap((value) => value.split(","))
+      .map((value) => value.trim())
+      .filter(Boolean);
+  }
+
+  function applyUrlParams() {
+    const params = new URLSearchParams(window.location.search);
+    if (Array.from(params.keys()).length === 0) return;
+    const problems = [];
+
+    // Preset first: applyPortPreset() resets port/username/password to that preset's
+    // defaults, which any explicit host/port/user/password parameter below then overrides.
+    const preset = params.get("preset");
+    if (preset) {
+      const select = document.getElementById("target-port-preset");
+      const option = Array.from(select.options).find(
+        (opt) => opt.dataset.preset === preset.trim().toLowerCase()
+      );
+      if (option) {
+        select.selectedIndex = option.index;
+        applyPortPreset(select);
+      } else {
+        problems.push(`unknown preset "${preset}"`);
+      }
+    }
+
+    const fields = {
+      "target-host-input": ["host", "target_host"],
+      "target-port-input": ["port", "target_port"],
+      "target-user-input": ["user", "username", "target_user"],
+      "target-password-input": ["password", "target_password"],
+    };
+    Object.entries(fields).forEach(([id, keys]) => {
+      const key = keys.find((k) => params.has(k));
+      if (key) document.getElementById(id).value = params.get(key);
+    });
+
+    urlParamList(params, "playbook", "playbooks").forEach((name) => {
+      const button = document.querySelector(
+        `.playbook-button[data-playbook="${CSS.escape(name)}"]`
+      );
+      if (button) applyPlaybook(button);
+      else problems.push(`unknown playbook "${name}"`);
+    });
+    urlParamList(params, "role", "roles").forEach((name) => {
+      const checkbox = document.getElementById("role-" + name);
+      if (checkbox) checkbox.checked = true;
+      else problems.push(`unknown role "${name}"`);
+    });
+    syncSelectedRolesSummary();
+
+    // Variables only make sense against the roles now checked, so they're resolved last.
+    // A per-role vars[<role>][<name>] wins over a global vars[<name>] for that role.
+    const specs = {};
+    document.querySelectorAll('input[name="roles"]:checked').forEach((el) => {
+      specs[el.value] = JSON.parse(el.dataset.vars || "{}");
+    });
+    const values = {};
+    const setValue = (role, name, value) => {
+      const spec = specs[role][name];
+      // buildVarRow() only treats "true" as a checked checkbox, so normalize the usual
+      // truthy spellings (matching routes/runs.py's own bool coercion) for bool variables.
+      if (spec.type === "bool") value = String(/^(1|true|yes|on)$/i.test(value.trim()));
+      (values[role] ??= {})[name] = value;
+    };
+    const perRole = [];
+    for (const [key, value] of params) {
+      let match = key.match(/^vars\[([^\]]+)\]\[([^\]]+)\]$/);
+      if (match) {
+        perRole.push([match[1], match[2], value]);
+        continue;
+      }
+      match = key.match(/^vars\[([^\]]+)\]$/);
+      if (match) {
+        const owners = Object.keys(specs).filter((role) => match[1] in specs[role]);
+        if (owners.length === 0) problems.push(`no selected role declares variable "${match[1]}"`);
+        owners.forEach((role) => setValue(role, match[1], value));
+      }
+    }
+    perRole.forEach(([role, name, value]) => {
+      if (!(role in specs)) problems.push(`variable for unselected role "${role}"`);
+      else if (!(name in specs[role])) problems.push(`role "${role}" has no variable "${name}"`);
+      else setValue(role, name, value);
+    });
+    syncRoleVariables(values);
+
+    if (document.getElementById("target-host-input").value.trim()) checkTargetPort();
+
+    if (problems.length > 0) {
+      showToast("URL parameters: " + problems.join("; ") + ".", "error");
+    }
+
+    // execute=1 is handled server-side (routes/pages.py -- so curl works too); by the time a
+    // page loads here it was either consumed (redirected with run=<id>) or refused, in which
+    // case the reason is surfaced below. Either way, never leave it in the address bar.
+    const executeError = {{ url_execute_error | tojson_script }};
+    if (executeError) showToast("Not executing: " + executeError + ".", "error");
+
+    const runId = params.get("run");
+    const stripped = new URLSearchParams(params);
+    stripped.delete("execute");
+    stripped.delete("run");
+    if (params.has("execute") || runId) {
+      const query = stripped.toString();
+      window.history.replaceState(
+        null, "", window.location.pathname + (query ? "?" + query : "") + window.location.hash
+      );
+    }
+    if (runId) {
+      fetch(`runs/${encodeURIComponent(runId)}`).then(async (response) => {
+        if (!response.ok) return;
+        openRunTab(await response.text());
+        showMobileView("output");
+        switchBottomTab("log");
+      });
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", applyUrlParams);
+
+  // ---------------------------------------------------------------------
+  // Header "copy link" button: builds a URL (the same parameters applyUrlParams() reads) that
+  // re-creates the current Deploy configuration -- preset, host/port/user, checked roles, and
+  // any filled-in role variables -- and puts it on the clipboard. The password is deliberately
+  // never included (it would end up in history/logs); append &password=... yourself, and
+  // &execute=1 to make the link launch the run when visited (also works from curl).
+  // ---------------------------------------------------------------------
+  function buildDeploymentLink() {
+    const params = new URLSearchParams();
+    const preset = document.getElementById("target-port-preset").selectedOptions[0];
+    if (preset && preset.dataset.preset) params.set("preset", preset.dataset.preset);
+    const fields = [
+      ["host", "target-host-input"],
+      ["port", "target-port-input"],
+      ["user", "target-user-input"],
+    ];
+    fields.forEach(([key, id]) => {
+      const value = document.getElementById(id).value.trim();
+      if (value) params.set(key, value);
+    });
+    const roles = Array.from(document.querySelectorAll('input[name="roles"]:checked')).map(
+      (el) => el.value
+    );
+    if (roles.length) params.set("roles", roles.join(","));
+    new FormData(applyForm).forEach((value, key) => {
+      if (/^vars\[[^\]]+\]\[[^\]]+\]$/.test(key) && String(value) !== "") {
+        params.set(key, String(value));
+      }
+    });
+    // Relative-URL convention: the page's own address, minus any query/hash, is the base.
+    return window.location.origin + window.location.pathname + "?" + params.toString();
+  }
+
+  async function copyDeploymentLink() {
+    const link = buildDeploymentLink();
+    try {
+      await navigator.clipboard.writeText(link);
+    } catch (err) {
+      // navigator.clipboard needs a secure context (https or localhost); over plain http on
+      // a LAN address it's unavailable, so fall back to the legacy copy command.
+      const box = document.createElement("textarea");
+      box.value = link;
+      box.style.position = "fixed";
+      box.style.opacity = "0";
+      document.body.appendChild(box);
+      box.select();
+      const ok = document.execCommand("copy");
+      box.remove();
+      if (!ok) {
+        showToast("Couldn't access the clipboard.", "error");
+        return;
+      }
+    }
+    showToast("Deployment link copied (password not included).");
+  }
 </script>
 
 {% endblock %}

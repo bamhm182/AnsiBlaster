@@ -206,6 +206,42 @@ logs) is persisted so past runs can be reviewed later.
   comments; playbook rows use the same "outer `<div>`, two sibling `<button>`s" shape as the run
   tabs described below.
 
+### URL parameters
+
+`GET /` can pre-fill the Deploy column and optionally launch a run from its query string:
+`playbook(s)`/`role(s)` (repeatable and/or comma-separated), `preset` (`ssh`/`winrm`/
+`winrm-secure`/`psrp`/`psrp-secure`, default `ssh`), `host`/`port`/`user`/`password` (also
+`username` and the `target_*` form names), `vars[<role>][<name>]` (one role) or `vars[<name>]`
+(every selected role declaring it; per-role wins), `execute=1`, and `format=json`.
+
+- **Pre-fill is client-side** (`applyUrlParams()` in `index.html`, on `DOMContentLoaded`): it
+  drives the same controls a user would. Unknown playbooks/roles/presets/variables surface as one
+  error toast.
+- **`execute=1` is opt-in**: `server.allow_url_execute` (default `false`; env
+  `ANSIBLASTER_SERVER__ALLOW_URL_EXECUTE`) must be true, otherwise `execute=1` is refused --
+  403 JSON `{"error": ...}` for curl, or the page with an error toast for a browser. Pre-fill
+  itself is always available.
+- **`execute=1` is server-side**, so a non-JS client (curl, scripts) works: `routes/pages.py`
+  resolves the same parameters (`url_params.py`'s `resolve_run_params()` -- a variable the URL
+  doesn't set gets its override-aware default, blank credentials fall back to the preset's
+  configured defaults) and launches through `routes/runs.py`'s `start_run()`, the same
+  validation/coercion path as `POST /runs`. Anything that doesn't resolve (or a missing host,
+  no roles, a bad/missing required variable) **blocks** the run -- an automatic deploy must never
+  apply something other than what the link asked for. A browser (`Accept` includes `text/html`)
+  gets a 303 to a *relative* `?<same params minus execute>&run=<id>` (so a reload re-fills
+  without relaunching; the client opens that run's tab and strips `run`), or, if refused, the
+  page with the reason in a toast (`url_execute_error`). Anything else (curl) gets JSON: 201
+  `{id, status, target, roles, detail, stream, log}` (paths relative to the base URL) or 400
+  `{"error": "..."}`.
+- **Safety**: a GET that deploys is refused if the request carries `Sec-Fetch-Mode` other than
+  `navigate` (an `<img>`/`fetch` from another page); curl sends no such header. A link a user
+  *navigates* to can still run -- inherent to the feature, and the reason a `password` in a URL
+  is discouraged (history/proxy logs); prefer the configured defaults.
+- **Copy-link button** (header, next to the settings cog; `copyDeploymentLink()`): puts a link
+  re-creating the current preset/host/port/user/checked roles/filled variables on the clipboard
+  (password never included; falls back to `execCommand` when `navigator.clipboard` is
+  unavailable over plain http). Append `&execute=1` (and `&password=...`) to make it launch.
+
 ### Playbooks (role presets)
 
 - A **playbook** is a YAML file — written like a normal Ansible playbook (a list of plays, each
@@ -704,7 +740,7 @@ one column/table per override kind.
 
 | Method & path | Purpose |
 |---|---|
-| `GET /` | Main page: role checklist, apply form, recent run history |
+| `GET /` | Main page: role checklist, apply form, recent run history; query parameters pre-fill it, and `execute=1` launches a run (see "URL parameters") |
 | `GET /roles` | HTMX fragment — rescans the roles directory, re-renders the checklist |
 | `GET /roles/{name}/files` | HTMX fragment — Viewer tab file list for one role (`partials/file_browser.html`) |
 | `GET /roles/{name}/file` | HTMX fragment — one file's read-only content (`path` query param, `partials/file_content.html`) |
@@ -742,6 +778,7 @@ not an error.
 server:
   host: "0.0.0.0"
   port: 8000
+  allow_url_execute: false   # let GET /?execute=1 launch a run -- see "URL parameters"
 
 ansible:
   # path: /opt/ansible   # unset by default -- base dir for roles_path/playbooks_path below,
@@ -844,6 +881,7 @@ Every key is overridable via an environment variable using the `ANSIBLASTER_` pr
 the nesting delimiter, e.g.:
 
 - `ANSIBLASTER_SERVER__PORT=9000`
+- `ANSIBLASTER_SERVER__ALLOW_URL_EXECUTE=true` (enables `?execute=1` deployments)
 - `ANSIBLASTER_ANSIBLE__PATH=/srv/ansible` (implies `roles_path`/`playbooks_path` of
   `/srv/ansible/roles`/`/srv/ansible/playbooks`, unless either is itself also set below)
 - `ANSIBLASTER_ANSIBLE__ROLES_PATH=/srv/ansible/roles`

@@ -116,6 +116,58 @@ def _coerce_role_variables(
     return result
 
 
+class RunRequestError(ValueError):
+    """A user-facing message for a run request that can't be started (missing host/user, bad
+    role variables, no roles...). POST /runs turns it into a 400; GET /?execute=1 into JSON."""
+
+
+def start_run(
+    *,
+    job_manager: JobManager,
+    session_factory: sessionmaker[Session],
+    settings: Settings,
+    target_os: TargetOS,
+    target_host: str,
+    target_port: int,
+    target_user: str,
+    target_password: str,
+    roles: list[str],
+    raw_variables: dict[str, dict[str, str]],
+) -> Run:
+    """Validate and launch one run -- the single code path shared by POST /runs (the form) and
+    GET /?execute=1 (URL parameters, see routes/pages.py), so both apply exactly the same
+    validation, role-variable coercion and global run options."""
+    if not target_host or not target_user:
+        raise RunRequestError("Target host and username are required.")
+
+    try:
+        role_specs = discover_role_variables(settings.ansible.roles_path, roles)
+        variables = _coerce_role_variables(raw_variables, role_specs, roles)
+    except _VariableError as exc:
+        raise RunRequestError(str(exc)) from exc
+
+    # Global run options (Settings popup > Run Options) -- not a per-run form field.
+    with session_scope(session_factory) as session:
+        options = get_run_options(session)
+
+    try:
+        return job_manager.start_job(
+            target_os=target_os,
+            target_host=target_host,
+            target_port=target_port,
+            target_user=target_user,
+            target_password=target_password,
+            roles=roles,
+            variables=variables,
+            gather_facts=options.gather_facts,
+            become=options.become,
+            python_interpreter=options.python_interpreter,
+            connection_timeout=options.connection_timeout,
+        )
+    except ValueError as exc:
+        raise RunRequestError(str(exc)) from exc
+
+
 @router.get("")
 async def list_runs(request: Request, session_factory=Depends(get_session_factory)):
     with session_scope(session_factory) as session:
@@ -138,44 +190,25 @@ async def create_run(
     except ValueError:
         return PlainTextResponse("Invalid target OS.", status_code=400)
 
-    target_host = str(form.get("target_host") or "").strip()
-    target_user = str(form.get("target_user") or "").strip()
-    target_password = str(form.get("target_password") or "")
-    roles = [role for role in form.getlist("roles") if role]
-
     try:
         target_port = int(form.get("target_port", ""))
     except ValueError:
         return PlainTextResponse("Port must be a number.", status_code=400)
 
-    if not target_host or not target_user:
-        return PlainTextResponse("Target host and username are required.", status_code=400)
-
     try:
-        role_specs = discover_role_variables(settings.ansible.roles_path, roles)
-        variables = _coerce_role_variables(_parse_role_variables(form), role_specs, roles)
-    except _VariableError as exc:
-        return PlainTextResponse(str(exc), status_code=400)
-
-    # Global run options (Settings popup > Run Options) -- not a per-run form field.
-    with session_scope(session_factory) as session:
-        options = get_run_options(session)
-
-    try:
-        run = job_manager.start_job(
+        run = start_run(
+            job_manager=job_manager,
+            session_factory=session_factory,
+            settings=settings,
             target_os=target_os,
-            target_host=target_host,
+            target_host=str(form.get("target_host") or "").strip(),
             target_port=target_port,
-            target_user=target_user,
-            target_password=target_password,
-            roles=roles,
-            variables=variables,
-            gather_facts=options.gather_facts,
-            become=options.become,
-            python_interpreter=options.python_interpreter,
-            connection_timeout=options.connection_timeout,
+            target_user=str(form.get("target_user") or "").strip(),
+            target_password=str(form.get("target_password") or ""),
+            roles=[role for role in form.getlist("roles") if role],
+            raw_variables=_parse_role_variables(form),
         )
-    except ValueError as exc:
+    except RunRequestError as exc:
         return PlainTextResponse(str(exc), status_code=400)
 
     # start_job()'s returned Run reflects only the moment it was inserted (status=pending) --

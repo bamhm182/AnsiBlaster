@@ -162,6 +162,46 @@ implies `roles_path`/`playbooks_path` of `/srv/ansible/roles`/`/srv/ansible/play
 when both live side by side, e.g. one checked-out Ansible content repo), unless you also set
 either of those individually. Full reference in [`CLAUDE.md`](CLAUDE.md#configuration-file).
 
+## URL parameters
+
+The main page can be pre-filled (and optionally launched) straight from its address, e.g. for a
+bookmark or a link from another tool:
+
+```
+http://localhost:8000/?playbook=lamp&role=docker-host&preset=ssh&host=10.0.0.5&user=admin&vars[apache][apache_listen_port]=8080&execute=1
+```
+
+| Parameter | Effect |
+|---|---|
+| `playbook` / `playbooks` | Apply playbook(s) — repeatable and/or comma-separated |
+| `role` / `roles` | Check role(s) — repeatable and/or comma-separated |
+| `preset` | `ssh`, `winrm`, `winrm-secure`, `psrp`, or `psrp-secure` |
+| `host`, `port`, `user` (or `username`), `password` | Fill the Host fields |
+| `vars[<role>][<name>]` | Set one role's variable |
+| `vars[<name>]` | Set a variable on every selected role that declares it |
+| `execute=1` | Launch the run (server-side; see below) |
+
+`execute=1` is **disabled by default** — enable it with `server.allow_url_execute: true` in
+`config.yaml` or `ANSIBLASTER_SERVER__ALLOW_URL_EXECUTE=true` (otherwise it's refused: a 403 JSON
+error for `curl`, an error toast in a browser; pre-filling always works). When enabled it launches
+the run **server-side**, so it also works from a script. Anything that
+doesn't resolve (unknown playbook/role/preset/variable, no host, no roles, a missing required
+variable) blocks it. A browser is redirected to the page with the new run open; `curl` and other
+non-browser clients get JSON:
+
+```
+$ curl -s 'http://localhost:8000/?role=apache&host=10.0.0.5&user=admin&password=...&execute=1'
+{"id":"…","status":"pending","target":"admin@10.0.0.5:22","roles":["apache"],"log":"runs/…/log",…}
+```
+
+Blank `user`/`password` fall back to the configured defaults for that preset, and any variable
+you don't set gets its default. Requests that a browser marks as a cross-site image/fetch are
+refused. A `password` in a URL ends up in browser history and proxy logs — prefer the configured
+defaults for that.
+
+The link button next to the settings cog copies a URL that re-creates whatever is currently in the
+Deploy column (without the password); add `&execute=1` to make it launch.
+
 ## Development
 
 This repo was built and is documented for AI coding assistants — see [`CLAUDE.md`](CLAUDE.md)

@@ -50,6 +50,10 @@ _DEFAULT_PLAYBOOKS_PATH = f"{_DEFAULT_ANSIBLE_DIR}/playbooks"
 class ServerSettings(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8000
+    # Whether GET /?execute=1 may launch a run (see AGENTS.md's "URL parameters"). Off by
+    # default: a GET that deploys is something to opt in to. Pre-filling the form from URL
+    # parameters is harmless and always works.
+    allow_url_execute: bool = False
 
 
 class AnsibleSettings(BaseModel):
